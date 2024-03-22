@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "alwaysStrict": true,
+    "allowJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "allowSyntheticDefaultImports": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictPropertyInitialization": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "useUnknownInCatchVariables": false,
+    "module": "commonjs",
+    "lib": ["es6", "DOM"],
+    "target": "ES2017",
+    "declaration": true,
+    "downlevelIteration": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "declarationMap": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "outDir": "./dist",
+    "types": ["jest", "node"]
+  },
+  "include": [
+    "src",
+    "tests"
+  ]
+}
