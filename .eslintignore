@@ -4,3 +4,4 @@ node_modules
 .idea
 .vscode
 .yarn
+tests/oauth4webapi

@@ -28,13 +28,16 @@
   "files": [
     "dist"
   ],
+  "type": "module",
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
     "lint:es": "eslint src --fix --quiet",
     "lint:ts": "tsc",
     "lint": "npm run lint:es && npm run lint:ts",
-    "test": "jest --coverage"
+    "test": "npm run test:sdk && npm run test:oauth4webapi",
+    "test:sdk": "jest --coverage",
+    "test:oauth4webapi": "bash -c 'source .node_flags.sh && ava'"
   },
   "dependencies": {
     "cookie": "^0.6.0",
@@ -45,12 +48,13 @@
   },
   "devDependencies": {
     "@types/cookie": "^0.6.0",
-    "@types/node": "^20.11.30",
     "@types/debug": "4.1.12",
     "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.30",
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^7.3.1",
     "@typescript-eslint/parser": "^7.3.1",
+    "ava": "^6.1.2",
     "eslint": "^8.57.0",
     "eslint-config-airbnb-base": "15.0.0",
     "eslint-config-airbnb-typescript": "18.0.0",
@@ -63,8 +67,10 @@
     "rimraf": "^5.0.5",
     "timekeeper": "^2.3.1",
     "ts-jest": "^29.1.2",
+    "tsx": "^4.7.1",
     "type-fest": "^4.13.1",
-    "typescript": "^5.4.3"
+    "typescript": "^5.4.3",
+    "undici": "^6.10.2"
   },
   "engines": {
     "node": ">=16"
