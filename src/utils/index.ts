@@ -161,7 +161,10 @@ export const removeTrailingSlash = (val?: string): string => {
   return v.endsWith('/') ? v.substring(0, v.length - 1) : v;
 };
 
-export const isPresent = (value?: string): boolean => {
+export const isPresent = (value?: string | number | boolean): boolean => {
+  if (typeof value === 'boolean' || typeof value === 'number') {
+    return true;
+  }
   const v = value?.trim();
   return v !== undefined && v !== null && v.length > 0;
 };

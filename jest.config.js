@@ -6,7 +6,7 @@ export default {
   testPathIgnorePatterns: ['tests/oauth4webapi'],
   coveragePathIgnorePatterns: [
     'node_modules',
-    'tests/test-mocks.ts',
+    'tests/test-helpers.ts',
     'src/openid-client/oauth4webapi.ts',
   ],
 };

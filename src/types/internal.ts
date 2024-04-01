@@ -172,5 +172,5 @@ export interface Tokens {
   scope?: string;
   expires_at?: number;
   expires_in?: number;
-  claims?: Partial<IdTokenClaims>;
+  claims: Partial<IdTokenClaims>;
 }

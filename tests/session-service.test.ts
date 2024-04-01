@@ -9,23 +9,17 @@ import {
   SameSiteValues,
   MonoCloudOptions,
   MonoCloudSession,
-  MonoCloudSessionStore,
 } from '../src/types';
 import { MonoCloudSessionService } from '../src/session/monocloud-session-service';
-import { TestReq, TestRes, TestStore } from './test-mocks';
-
-const defaultConfig: MonoCloudOptions = {
-  cookieSecret: '__test_session_secret__',
-  clientId: '__test_client_id__',
-  clientSecret: '__test_client_secret__',
-  issuer: 'https://op.example.com',
-  appUrl: 'https://example.org',
-  defaultAuthParams: {
-    response_type: 'code',
-    scope: 'openid profile read:customer',
-    audience: 'https://api.acme.com',
-  },
-};
+import {
+  TestReq,
+  TestRes,
+  TestStore,
+  defaultConfig,
+  defaultStoreKeyForTest,
+  defaultSessionData,
+  getSessionCookie,
+} from './test-helpers';
 
 const frozenTimeMs = 1330688329321;
 const frozenTimeSec = 1330688329;
@@ -36,41 +30,6 @@ const getService = (
   return Promise.resolve(
     new MonoCloudSessionService(getOptions({ ...defaultConfig, ...params }))
   );
-};
-
-const defaultKey = 'key';
-
-const defaultSessionData = (): MonoCloudSession => ({
-  user: {
-    sub: 'randomid',
-  },
-  foo: 'bar',
-  accessToken: 'at',
-  accessTokenExpiration: 0,
-  idToken: 'idt',
-  refreshToken: 'rt',
-  scopes: 'openid',
-});
-
-const getSessionCookie = (params?: {
-  session?: any;
-  store?: MonoCloudSessionStore;
-  key?: any;
-  exp?: number;
-}) => {
-  const lifetime = { e: params?.exp ?? now() + 1, c: now(), u: now() };
-
-  const cookieValue = {
-    key: params?.key ?? defaultKey,
-    lifetime,
-    session: !params?.store ? params?.session : undefined,
-  };
-
-  if (params?.store) {
-    params.store.set(cookieValue.key, params?.session ?? {}, lifetime);
-  }
-
-  return encryptData(JSON.stringify(cookieValue), defaultConfig.cookieSecret!);
 };
 
 describe('Session Service', () => {
@@ -113,14 +72,14 @@ describe('Session Service', () => {
 
       expect(key.length).toBeGreaterThan(1);
       expect(sessionCookieValue.key.length).toBeGreaterThan(0);
-      expect(sessionCookieValue.session).toMatchObject(session);
+      expect(sessionCookieValue.session).toEqual(session);
       expect(sessionCookieValue.lifetime.c).toEqual(frozenTimeSec);
       expect(sessionCookieValue.lifetime.c).toEqual(
         sessionCookieValue.lifetime.u
       );
       expect(sessionCookieValue.lifetime.e).toEqual(frozenTimeSec + 86400);
 
-      expect(res.cookies.cookie_name.options).toMatchObject({
+      expect(res.cookies.cookie_name.options).toEqual({
         domain: cookieOptions.domain,
         httpOnly: cookieOptions.httpOnly,
         sameSite: cookieOptions.sameSite,
@@ -142,11 +101,11 @@ describe('Session Service', () => {
       } as any;
 
       const sessionValue = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes()
       );
 
-      expect(sessionValue).toMatchObject(session);
+      expect(sessionValue).toEqual(session);
     });
 
     it('should be able to update the session from cookies with configured options ', async () => {
@@ -173,7 +132,7 @@ describe('Session Service', () => {
       const newSession = { ...session, newValue: 'yoohoo' };
 
       const updateResult = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         newSession
       );
@@ -181,11 +140,11 @@ describe('Session Service', () => {
       expect(updateResult).toBe(true);
 
       const sessionValue = (await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       ))!;
 
-      expect(sessionValue).toMatchObject(newSession);
+      expect(sessionValue).toEqual(newSession);
 
       const sessionCookieValue: SessionCookieValue = JSON.parse(
         (await decryptData(
@@ -195,7 +154,7 @@ describe('Session Service', () => {
       );
 
       expect(sessionCookieValue.key.length).toBeGreaterThan(0);
-      expect(sessionCookieValue.session).toMatchObject(newSession);
+      expect(sessionCookieValue.session).toEqual(newSession);
       expect(sessionCookieValue.lifetime.c).toEqual(frozenTimeSec);
       expect(sessionCookieValue.lifetime.c).toEqual(
         sessionCookieValue.lifetime.u
@@ -217,10 +176,13 @@ describe('Session Service', () => {
         cookie_name: { value: await getSessionCookie() },
       } as any;
 
-      await service.removeSession(new TestReq(cookies), new TestRes(cookies));
+      await service.removeSession(
+        new TestReq({ cookies }),
+        new TestRes(cookies)
+      );
 
       expect(Object.entries(cookies).length).toBe(2);
-      expect(cookies.cookie_name.options.expires).toMatchObject(new Date(0));
+      expect(cookies.cookie_name.options.expires).toEqual(new Date(0));
       expect(cookies.cookie_name.value).toBe('');
       expect(cookies.other.value).toBe('abc');
     });
@@ -243,13 +205,13 @@ describe('Session Service', () => {
       travel(newFrozenTimeMs);
 
       const sessionValue = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       );
 
       expect(sessionValue).toBeUndefined();
       expect(Object.entries(cookies).length).toBe(1);
-      expect(cookies.session.options.expires).toMatchObject(new Date(0));
+      expect(cookies.session.options.expires).toEqual(new Date(0));
       expect(cookies.session.value).toBe('');
     });
 
@@ -259,7 +221,7 @@ describe('Session Service', () => {
       const cookies = {};
 
       const sessionValue = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       );
 
@@ -273,13 +235,13 @@ describe('Session Service', () => {
       const cookies: any = { session: { value: 'invalid' } };
 
       const sessionValue = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       );
 
       expect(sessionValue).toBeUndefined();
       expect(Object.entries(cookies).length).toBe(1);
-      expect(cookies.session.options.expires).toMatchObject(new Date(0));
+      expect(cookies.session.options.expires).toEqual(new Date(0));
       expect(cookies.session.value).toBe('');
     });
 
@@ -289,7 +251,7 @@ describe('Session Service', () => {
       const cookies = { session: { value: await getSessionCookie() } } as any;
 
       const session = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes()
       );
 
@@ -315,13 +277,18 @@ describe('Session Service', () => {
       );
 
       expect(sessionValue.key.length).toBeGreaterThan(0);
-      expect(sessionValue.session).toMatchObject(session);
+      expect(sessionValue.session).toEqual(session);
       expect(sessionValue.lifetime.c).toEqual(frozenTimeSec);
       expect(sessionValue.lifetime.c).toEqual(sessionValue.lifetime.u);
       expect(sessionValue.lifetime.e).toBeUndefined();
 
-      expect(cookies.session.options).toMatchObject({
+      expect(cookies.session.options).toEqual({
+        domain: undefined,
         expires: undefined,
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
       });
     });
 
@@ -331,16 +298,14 @@ describe('Session Service', () => {
       const cookies: any = { session: { value: 'invalid' } };
 
       const updated = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         { user: { sub: 'yooohoo' } }
       );
 
       expect(updated).toBe(false);
       expect(Object.entries(cookies).length).toBe(1);
-      expect((cookies as any).session.options.expires).toMatchObject(
-        new Date(0)
-      );
+      expect((cookies as any).session.options.expires).toEqual(new Date(0));
       expect((cookies as any).session.value).toBe('');
     });
 
@@ -354,7 +319,7 @@ describe('Session Service', () => {
       } as any;
 
       const updated = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         { user: { sub: 'yooohoo' }, accessToken: 'at' }
       );
@@ -370,10 +335,13 @@ describe('Session Service', () => {
         session: { value: 'invalid' },
       } as any;
 
-      await service.removeSession(new TestReq(cookies), new TestRes(cookies));
+      await service.removeSession(
+        new TestReq({ cookies }),
+        new TestRes(cookies)
+      );
 
       expect(Object.entries(cookies).length).toBe(2);
-      expect(cookies.session.options.expires).toMatchObject(new Date(0));
+      expect(cookies.session.options.expires).toEqual(new Date(0));
       expect(cookies.session.value).toBe('');
       expect(cookies.other.value).toBe('abc');
     });
@@ -418,13 +386,13 @@ describe('Session Service', () => {
       );
 
       expect(sessionValue.key.length).toBeGreaterThan(0);
-      expect(sessionValue.session).toMatchObject(session);
+      expect(sessionValue.session).toEqual(session);
       expect(sessionValue.lifetime.c).toEqual(frozenTimeSec);
       expect(sessionValue.lifetime.c).toEqual(sessionValue.lifetime.u);
       expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 86400);
 
       Object.values(res.cookies).forEach(cookie => {
-        expect(cookie.options).toMatchObject({
+        expect(cookie.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -455,10 +423,10 @@ describe('Session Service', () => {
       await service.setSession(new TestReq(), res, session);
 
       const sessionValue = await service.getSession(
-        new TestReq(res.cookies),
+        new TestReq({ cookies: res.cookies }),
         new TestRes()
       );
-      expect(sessionValue).toMatchObject(session);
+      expect(sessionValue).toEqual(session);
     });
 
     it('should be able to update chunked cookies', async () => {
@@ -493,7 +461,7 @@ describe('Session Service', () => {
       };
 
       const updated = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         session
       );
@@ -509,9 +477,9 @@ describe('Session Service', () => {
 
       expect(updated).toBe(true);
       expect(Object.keys(cookies).length).toBe(3);
-      expect(sessionValue.session).toMatchObject(session);
+      expect(sessionValue.session).toEqual(session);
       Object.values(cookies).forEach((cookie: any) => {
-        expect(cookie.options).toMatchObject({
+        expect(cookie.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -556,7 +524,7 @@ describe('Session Service', () => {
       };
 
       const updated = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         session
       );
@@ -569,12 +537,12 @@ describe('Session Service', () => {
       );
 
       expect(updated).toBe(true);
-      expect(sessionValue.session).toMatchObject(session);
+      expect(sessionValue.session).toEqual(session);
 
       const cookieValues = Object.values(cookies);
 
       [cookieValues[0], cookieValues[1]].forEach((cookie: any) => {
-        expect(cookie.options).toMatchObject({
+        expect(cookie.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -586,7 +554,7 @@ describe('Session Service', () => {
 
       [cookieValues[2], cookieValues[3]].forEach((cookie: any) => {
         expect(cookie.value).toBe('');
-        expect(cookie.options.expires).toMatchObject(new Date(0));
+        expect(cookie.options.expires).toEqual(new Date(0));
       });
     });
 
@@ -595,7 +563,7 @@ describe('Session Service', () => {
 
       const cookies = { 'session.': 'anyvalue' } as any;
       const session = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes()
       );
 
@@ -641,7 +609,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.c).toEqual(sessionValue.lifetime.u);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -658,7 +626,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -676,7 +644,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.u).toEqual(newFrozenTimeSec);
         expect(sessionValue.lifetime.e).toEqual(newFrozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -724,7 +692,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.c).toEqual(sessionValue.lifetime.u);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 7);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -741,7 +709,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -759,7 +727,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.u).toEqual(newFrozenTimeSec);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -813,12 +781,12 @@ describe('Session Service', () => {
 
         res = new TestRes();
         const sessionValue = (await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           res,
           true
         ))!;
 
-        expect(sessionValue).toMatchObject(session);
+        expect(sessionValue).toEqual(session);
 
         sessionCookieValue = JSON.parse(
           (await decryptData(
@@ -871,12 +839,12 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const sessionValue = (await service.getSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           new TestRes(),
           false
         ))!;
 
-        expect(sessionValue).toMatchObject(session);
+        expect(sessionValue).toEqual(session);
 
         sessionCookieValue = JSON.parse(
           (await decryptData(
@@ -914,7 +882,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         await service.updateSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies),
           session
         );
@@ -926,15 +894,13 @@ describe('Session Service', () => {
         travel(newNewFrozenTimeMs);
 
         const sessionValue = await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies)
         );
 
         expect(sessionValue).toBeUndefined();
         expect(Object.entries(cookies).length).toBe(1);
-        expect((cookies as any).session.options.expires).toMatchObject(
-          new Date(0)
-        );
+        expect((cookies as any).session.options.expires).toEqual(new Date(0));
         expect((cookies as any).session.value).toBe('');
       });
 
@@ -960,15 +926,13 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const sessionValue = await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies)
         );
 
         expect(sessionValue).toBeUndefined();
         expect(Object.entries(cookies).length).toBe(1);
-        expect((cookies as any).session.options.expires).toMatchObject(
-          new Date(0)
-        );
+        expect((cookies as any).session.options.expires).toEqual(new Date(0));
         expect((cookies as any).session.value).toBe('');
       });
     });
@@ -1010,7 +974,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.c).toEqual(sessionValue.lifetime.u);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1027,7 +991,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -1045,7 +1009,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.u).toEqual(newFrozenTimeSec);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1095,9 +1059,9 @@ describe('Session Service', () => {
         sessionCookieValue.lifetime.u
       );
       expect(sessionCookieValue.lifetime.e).toEqual(frozenTimeSec + 86400);
-      expect(await store.get(key)).toMatchObject(session);
+      expect(await store.get(key)).toEqual(session);
 
-      expect(res.cookies.cookie_name.options).toMatchObject({
+      expect(res.cookies.cookie_name.options).toEqual({
         domain: cookieOptions.domain,
         httpOnly: cookieOptions.httpOnly,
         sameSite: cookieOptions.sameSite,
@@ -1121,12 +1085,12 @@ describe('Session Service', () => {
       } as any;
 
       const sessionValue = (await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       ))!;
 
-      expect(sessionValue).toMatchObject(session);
-      expect(await store.get(defaultKey)).toMatchObject(session);
+      expect(sessionValue).toEqual(session);
+      expect(await store.get(defaultStoreKeyForTest)).toEqual(session);
     });
 
     it('should be able to update the session with configured options', async () => {
@@ -1160,7 +1124,7 @@ describe('Session Service', () => {
       const newSession = { ...session, newValue: 'yoohoo' };
 
       const updateResult = await service.updateSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies),
         newSession
       );
@@ -1168,12 +1132,12 @@ describe('Session Service', () => {
       expect(updateResult).toBe(true);
 
       const sessionValue = (await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       ))!;
 
-      expect(sessionValue).toMatchObject(newSession);
-      expect(await store.get(defaultKey)).toMatchObject(newSession);
+      expect(sessionValue).toEqual(newSession);
+      expect(await store.get(defaultStoreKeyForTest)).toEqual(newSession);
 
       const sessionCookieValue: SessionCookieValue = JSON.parse(
         (await decryptData(
@@ -1207,11 +1171,14 @@ describe('Session Service', () => {
         cookie_name: { value: await getSessionCookie({ store }) },
       } as any;
 
-      await service.removeSession(new TestReq(cookies), new TestRes(cookies));
+      await service.removeSession(
+        new TestReq({ cookies }),
+        new TestRes(cookies)
+      );
 
-      expect(await store.get(defaultKey)).toBeUndefined();
+      expect(await store.get(defaultStoreKeyForTest)).toBeUndefined();
       expect(Object.entries(cookies).length).toBe(2);
-      expect(cookies.cookie_name.options.expires).toMatchObject(new Date(0));
+      expect(cookies.cookie_name.options.expires).toEqual(new Date(0));
       expect(cookies.cookie_name.value).toBe('');
       expect(cookies.other.value).toBe('abc');
     });
@@ -1239,15 +1206,15 @@ describe('Session Service', () => {
       travel(newFrozenTimeMs);
 
       const sessionValue = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes(cookies)
       );
 
       expect(sessionValue).toBeUndefined();
       expect(Object.entries(cookies).length).toBe(1);
-      expect(cookies.session.options.expires).toMatchObject(new Date(0));
+      expect(cookies.session.options.expires).toEqual(new Date(0));
       expect(cookies.session.value).toBe('');
-      expect(await store.get(defaultKey)).toBeUndefined();
+      expect(await store.get(defaultStoreKeyForTest)).toBeUndefined();
     });
 
     it('should return undefined when getting a session thats not present in the store', async () => {
@@ -1255,14 +1222,17 @@ describe('Session Service', () => {
 
       const service = await getService({ session: { store } });
 
-      const encryptedData = encryptData(
-        JSON.stringify({ key: defaultKey, lifetime: { e: now() + 1 } }),
+      const encryptedData = await encryptData(
+        JSON.stringify({
+          key: defaultStoreKeyForTest,
+          lifetime: { e: now() + 1 },
+        }),
         defaultConfig.cookieSecret!
       );
       const cookies = { session: { value: encryptedData } } as any;
 
       const session = await service.getSession(
-        new TestReq(cookies),
+        new TestReq({ cookies }),
         new TestRes()
       );
 
@@ -1317,7 +1287,7 @@ describe('Session Service', () => {
         expect(storeLifeTime.c).toEqual(storeLifeTime.u);
         expect(storeLifeTime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1334,7 +1304,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -1358,7 +1328,7 @@ describe('Session Service', () => {
         expect(storeLifeTime.u).toEqual(newFrozenTimeSec);
         expect(storeLifeTime.e).toEqual(newFrozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1415,7 +1385,7 @@ describe('Session Service', () => {
         expect(storeLifeTime.c).toEqual(storeLifeTime.u);
         expect(storeLifeTime.e).toEqual(frozenTimeSec + 7);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1432,7 +1402,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -1456,7 +1426,7 @@ describe('Session Service', () => {
         expect(storeLifeTime.u).toEqual(newFrozenTimeSec);
         expect(storeLifeTime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1518,12 +1488,12 @@ describe('Session Service', () => {
 
         res = new TestRes();
         const sessionValue = (await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           res,
           true
         ))!;
 
-        expect(sessionValue).toMatchObject(session);
+        expect(sessionValue).toEqual(session);
 
         sessionCookieValue = JSON.parse(
           (await decryptData(
@@ -1589,12 +1559,12 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const sessionValue = (await service.getSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           new TestRes(),
           false
         ))!;
 
-        expect(sessionValue).toMatchObject(session);
+        expect(sessionValue).toEqual(session);
 
         sessionCookieValue = JSON.parse(
           (await decryptData(
@@ -1644,7 +1614,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         await service.updateSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies),
           session
         );
@@ -1656,15 +1626,13 @@ describe('Session Service', () => {
         travel(newNewFrozenTimeMs);
 
         const sessionValue = await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies)
         );
 
         expect(sessionValue).toBeUndefined();
         expect(Object.entries(cookies).length).toBe(1);
-        expect((cookies as any).session.options.expires).toMatchObject(
-          new Date(0)
-        );
+        expect((cookies as any).session.options.expires).toEqual(new Date(0));
         expect((cookies as any).session.value).toBe('');
         expect(await store.get(key)).toBeUndefined();
       });
@@ -1696,15 +1664,13 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const sessionValue = await service.getSession(
-          new TestReq(cookies),
+          new TestReq({ cookies }),
           new TestRes(cookies)
         );
 
         expect(sessionValue).toBeUndefined();
         expect(Object.entries(cookies).length).toBe(1);
-        expect((cookies as any).session.options.expires).toMatchObject(
-          new Date(0)
-        );
+        expect((cookies as any).session.options.expires).toEqual(new Date(0));
         expect((cookies as any).session.value).toBe('');
         expect(await store.get(key)).toBeUndefined();
       });
@@ -1756,7 +1722,7 @@ describe('Session Service', () => {
         expect(storeLifeTime.u).toEqual(storeLifeTime.c);
         expect(storeLifeTime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,
@@ -1773,7 +1739,7 @@ describe('Session Service', () => {
         travel(newFrozenTimeMs);
 
         const updateResult = await service.updateSession(
-          new TestReq(res.cookies),
+          new TestReq({ cookies: res.cookies }),
           res,
           session
         );
@@ -1791,7 +1757,7 @@ describe('Session Service', () => {
         expect(sessionValue.lifetime.u).toEqual(newFrozenTimeSec);
         expect(sessionValue.lifetime.e).toEqual(frozenTimeSec + 10);
 
-        expect(res.cookies.cookie_name.options).toMatchObject({
+        expect(res.cookies.cookie_name.options).toEqual({
           domain: cookieOptions.domain,
           httpOnly: cookieOptions.httpOnly,
           sameSite: cookieOptions.sameSite,

@@ -22,6 +22,7 @@ import {
   HttpRequestOptions,
   refreshTokenGrantRequest,
   processRefreshTokenResponse,
+  OperationProcessingError,
 } from './oauth4webapi';
 import { MonoCloudOptionsBase } from '../types';
 import {
@@ -69,10 +70,14 @@ export class OAuthClient {
     debug(`Discovering metadata for ${this.options.issuer}`);
 
     try {
-      const as = await discoveryRequest(url);
+      const httpOptions = this.getHttpRequestOptions();
+      const as = await discoveryRequest(url, {
+        signal: httpOptions.signal,
+        headers: httpOptions.headers,
+      });
       authServer = await processDiscoveryResponse(url, as);
     } catch (error: any) {
-      if (error instanceof Error) {
+      if (error instanceof OperationProcessingError) {
         throw new MonoCloudDiscoveryError(error.message);
       } else {
         throw new MonoCloudError(
@@ -203,7 +208,7 @@ export class OAuthClient {
 
       return result;
     } catch (e: any) {
-      throw new MonoCloudOPError(e.message);
+      throw new MonoCloudOPError(e.message, e.error_description);
     }
   }
 
@@ -275,17 +280,17 @@ export class OAuthClient {
 
     const httpOptions = this.getHttpRequestOptions();
 
-    const response = await userInfoRequest(
-      this.authServer,
-      this.client,
-      accessToken,
-      {
-        signal: httpOptions.signal,
-        headers: httpOptions.headers,
-      }
-    );
-
     try {
+      const response = await userInfoRequest(
+        this.authServer,
+        this.client,
+        accessToken,
+        {
+          signal: httpOptions.signal,
+          headers: httpOptions.headers,
+        }
+      );
+
       return await processUserInfoResponse(
         this.authServer,
         this.client,
@@ -293,11 +298,11 @@ export class OAuthClient {
         response
       );
     } catch (e: any) {
-      if (e instanceof Error) {
+      if (e instanceof OperationProcessingError) {
         throw new MonoCloudOPError(e.message);
       } else {
         throw new MonoCloudError(
-          'An unknown error occurred while processing the user info response.'
+          'An unknown error occurred while fetching the user info.'
         );
       }
     }

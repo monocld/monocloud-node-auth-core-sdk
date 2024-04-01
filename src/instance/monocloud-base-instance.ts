@@ -63,7 +63,7 @@ export class MonoCloudBaseInstance {
     debug('Starting sign-in handler');
 
     // Merge the sign-in options and the default options
-    const opt: SignInOptions = {
+    const opt = {
       ...(signInOptions || {}),
       authParams: {
         ...this.options.defaultAuthParams,
@@ -78,7 +78,11 @@ export class MonoCloudBaseInstance {
       appState = await this.options.onSetApplicationState(request);
 
       // Validate the custom sign-in state
-      if (typeof appState !== 'object' || Array.isArray(appState)) {
+      if (
+        appState === null ||
+        typeof appState !== 'object' ||
+        Array.isArray(appState)
+      ) {
         throw new MonoCloudValidationError(
           'Invalid Application State. Expected state to be an object'
         );
@@ -104,7 +108,7 @@ export class MonoCloudBaseInstance {
     const verifier = this.client.generateCodeVerifier();
     const codeChallenge = await this.client.codeChallenge(verifier);
     const maxAge =
-      typeof opt.authParams?.max_age === 'number'
+      typeof opt.authParams.max_age === 'number'
         ? opt.authParams.max_age
         : undefined;
 
@@ -178,7 +182,7 @@ export class MonoCloudBaseInstance {
     );
 
     // Redirect to the authorize url
-    response.redirect(authUrl);
+    response.redirect(authUrl, 302);
 
     return response.done();
   }
@@ -518,6 +522,7 @@ export class MonoCloudBaseInstance {
     response: IMonoCloudCookieResponse,
     options?: GetTokensOptions
   ): Promise<MonoCloudTokens> {
+    let refreshParams;
     // Validate the get tokens options
     if (options) {
       const { error } = getTokensOptionsSchema.validate(options, {
@@ -527,6 +532,8 @@ export class MonoCloudBaseInstance {
       if (error) {
         throw new MonoCloudValidationError(error.details[0].message);
       }
+
+      refreshParams = options.refreshParams;
     }
 
     // Get the session
@@ -558,7 +565,7 @@ export class MonoCloudBaseInstance {
     }
 
     // Handle access token expired and no refresh token
-    if (!refreshToken && accessTokenExpiration * 1000 - 30000 < now()) {
+    if (!refreshToken && accessTokenExpiration - 30 < now()) {
       return { ...tokens, isExpired: true };
     }
 
@@ -578,10 +585,7 @@ export class MonoCloudBaseInstance {
     }
 
     // Refresh the token
-    const newTokens = await this.client.refresh(
-      refreshToken,
-      options?.refreshParams
-    );
+    const newTokens = await this.client.refresh(refreshToken, refreshParams);
 
     const newSession = await this.getSessionFromRefresh(newTokens, session);
 
@@ -617,10 +621,10 @@ export class MonoCloudBaseInstance {
     }
 
     // Get the identity token claims
-    const idTokenClaims = { ...(tokens.claims ?? {}) };
+    const idTokenClaims = { ...tokens.claims };
 
     // Delete the filtered claims
-    this.options.filteredIdTokenClaims?.forEach(x => {
+    this.options.filteredIdTokenClaims.forEach(x => {
       delete idTokenClaims[x as any];
     });
 
@@ -635,7 +639,7 @@ export class MonoCloudBaseInstance {
     };
 
     // If a custom post callback function was provided then call it
-    if (this.options?.onSessionCreating) {
+    if (this.options.onSessionCreating) {
       await this.options.onSessionCreating(
         session,
         tokens.claims,
@@ -660,10 +664,10 @@ export class MonoCloudBaseInstance {
     }
 
     // Get the identity token claims
-    const idTokenClaims = { ...(tokens.claims ?? {}) };
+    const idTokenClaims = { ...tokens.claims };
 
     // Delete the filtered claims
-    this.options.filteredIdTokenClaims?.forEach(x => {
+    this.options.filteredIdTokenClaims.forEach(x => {
       delete idTokenClaims[x as any];
     });
 

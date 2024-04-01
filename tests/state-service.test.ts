@@ -4,7 +4,7 @@ import { getOptions } from '../src/options/get-options';
 import { MonoCloudStateService } from '../src/state/monocloud-state-service';
 import { decryptData } from '../src/utils';
 import { MonoCloudState, SameSiteValues, MonoCloudOptions } from '../src/types';
-import { TestReq, TestRes } from './test-mocks';
+import { TestRes, TestReq } from './test-helpers';
 
 const defaultConfig: MonoCloudOptions = {
   cookieSecret: '__test_session_secret__',
@@ -62,7 +62,7 @@ describe('State Service', () => {
       )
     ).toBe(JSON.stringify({ state }));
 
-    expect(res.cookies.cookie_name.options).toMatchObject({
+    expect(res.cookies.cookie_name.options).toEqual({
       domain: cookieOptions.domain,
       httpOnly: cookieOptions.httpOnly,
       sameSite: cookieOptions.sameSite,
@@ -114,11 +114,11 @@ describe('State Service', () => {
     };
     await service.setState(new TestRes(cookies), state);
     const response = await service.getState(
-      new TestReq(cookies),
+      new TestReq({ cookies }),
       new TestRes(cookies)
     );
 
-    expect(response).toMatchObject(state);
+    expect(response).toEqual(state);
   });
 
   it('should return undefined when getting the state from request with no state cookie', async () => {
@@ -177,15 +177,13 @@ describe('State Service', () => {
     expect(Object.entries(cookies).length).toBe(1);
 
     const response = await service.getState(
-      new TestReq(cookies),
+      new TestReq({ cookies }),
       new TestRes(cookies)
     );
 
-    expect(response).toMatchObject(state);
+    expect(response).toEqual(state);
     expect(Object.entries(cookies).length).toBe(1);
-    expect((cookies as any).cookie_name.options.expires).toMatchObject(
-      new Date(0)
-    );
+    expect((cookies as any).cookie_name.options.expires).toEqual(new Date(0));
     expect((cookies as any).cookie_name.value).toBe('');
   });
 });

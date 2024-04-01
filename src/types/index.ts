@@ -3,7 +3,6 @@
 import type { Except, PartialDeep } from 'type-fest';
 import {
   AuthorizationParameters,
-  EndSessionParameters,
   IdTokenClaims,
   MonoCloudRequest,
   UserinfoResponse,
@@ -616,6 +615,13 @@ export interface UserInfoOptions {
   refresh?: boolean;
 }
 
+export interface SignOutParams {
+  state?: string;
+  client_id?: string;
+  logout_hint?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Represents options for the sign-out handler.
  */
@@ -634,7 +640,7 @@ export interface SignOutOptions {
   /**
    * Additional parameters to include in the sign-out request.
    */
-  signOutParams?: EndSessionParameters;
+  signOutParams?: SignOutParams;
 }
 
 /**

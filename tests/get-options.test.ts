@@ -19,6 +19,7 @@ describe('Configuration Options', () => {
 
   const clearEnvs = () => {
     addedEnvs.forEach(k => {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete process.env[k];
     });
 

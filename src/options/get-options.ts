@@ -205,7 +205,7 @@ export const getOptions = (
           DefaultOptions.state.cookie.path,
         domain:
           options?.state?.cookie?.domain || MONOCLOUD_AUTH_STATE_COOKIE_DOMAIN,
-        httpOnly: DefaultOptions.state?.cookie.httpOnly,
+        httpOnly: DefaultOptions.state.cookie.httpOnly,
         secure:
           options?.state?.cookie?.secure ??
           getBoolean(MONOCLOUD_AUTH_STATE_COOKIE_SECURE) ??
