@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import nock from 'nock';
-import { MonoCloudDiscoveryError } from '../src/errors/monocloud-discovery-error';
 import { MonoCloudValidationError } from '../src/errors/monocloud-validation-error';
 import { OAuthClient } from '../src/openid-client/oauth-client';
 import { getOptions } from '../src/options/get-options';
@@ -50,12 +49,15 @@ describe('OAuth Client', () => {
       }
     });
 
-    it('should throw discovery error if there were OP errors while discovering', async () => {
+    it('should throw op error if there were OP errors while discovering', async () => {
       try {
         await getConfiguredClient(undefined, {});
         throw new Error();
       } catch (err) {
-        expect(err).toBeInstanceOf(MonoCloudDiscoveryError);
+        expect(err).toBeInstanceOf(MonoCloudOPError);
+        expect(err.message).toBe(
+          '"response" body "issuer" property must be a non-empty string'
+        );
       }
     });
 

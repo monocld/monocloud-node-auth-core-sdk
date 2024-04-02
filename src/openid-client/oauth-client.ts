@@ -33,7 +33,6 @@ import {
   Tokens,
   UserinfoResponse,
 } from '../types/internal';
-import { MonoCloudDiscoveryError } from '../errors/monocloud-discovery-error';
 import { MonoCloudValidationError } from '../errors/monocloud-validation-error';
 import { MonoCloudOPError } from '../errors/monocloud-op-error';
 import { debug, isPresent, now } from '../utils';
@@ -78,7 +77,7 @@ export class OAuthClient {
       authServer = await processDiscoveryResponse(url, as);
     } catch (error: any) {
       if (error instanceof OperationProcessingError) {
-        throw new MonoCloudDiscoveryError(error.message);
+        throw new MonoCloudOPError(error.message);
       } else {
         throw new MonoCloudError(
           'An unknown error occurred while discovering the issuer.'
@@ -226,51 +225,63 @@ export class OAuthClient {
 
     const httpOptions = this.getHttpRequestOptions();
 
-    const response = await authorizationCodeGrantRequest(
-      this.authServer,
-      this.client,
-      callbackParameters,
-      redirectUri,
-      codeVerifier,
-      {
-        additionalParameters,
-        signal: httpOptions.signal,
-        headers: httpOptions.headers,
-      }
-    );
-
-    const result = await processAuthorizationCodeOpenIDResponse(
-      this.authServer,
-      this.client,
-      response,
-      expectedNonce,
-      maxAge
-    );
-
-    if (isOAuth2Error(result)) {
-      throw new MonoCloudOPError(result.error, result.error_description);
-    }
-
-    let claims: Partial<IdTokenClaims> = {};
-
-    if (result.id_token) {
-      claims = JSON.parse(
-        Buffer.from(result.id_token.split('.')[1].trim(), 'base64').toString(
-          'utf-8'
-        )
+    try {
+      const response = await authorizationCodeGrantRequest(
+        this.authServer,
+        this.client,
+        callbackParameters,
+        redirectUri,
+        codeVerifier,
+        {
+          additionalParameters,
+          signal: httpOptions.signal,
+          headers: httpOptions.headers,
+        }
       );
-    }
 
-    return {
-      access_token: result.access_token,
-      id_token: result.id_token,
-      refresh_token: result.refresh_token,
-      scope: result.scope,
-      token_type: result.token_type,
-      expires_in: result.expires_in,
-      expires_at: result.expires_in ? now() + result.expires_in : undefined,
-      claims,
-    };
+      const result = await processAuthorizationCodeOpenIDResponse(
+        this.authServer,
+        this.client,
+        response,
+        expectedNonce,
+        maxAge
+      );
+
+      if (isOAuth2Error(result)) {
+        throw new MonoCloudOPError(result.error, result.error_description);
+      }
+
+      let claims: Partial<IdTokenClaims> = {};
+
+      if (result.id_token) {
+        claims = JSON.parse(
+          Buffer.from(result.id_token.split('.')[1].trim(), 'base64').toString(
+            'utf-8'
+          )
+        );
+      }
+
+      return {
+        access_token: result.access_token,
+        id_token: result.id_token,
+        refresh_token: result.refresh_token,
+        scope: result.scope,
+        token_type: result.token_type,
+        expires_in: result.expires_in,
+        expires_at: result.expires_in ? now() + result.expires_in : undefined,
+        claims,
+      };
+    } catch (error) {
+      let err;
+
+      if (error instanceof OperationProcessingError) {
+        err = new MonoCloudOPError(error.message);
+      } else {
+        err = error;
+      }
+
+      throw err;
+    }
   }
 
   async userinfo(accessToken: string): Promise<UserinfoResponse> {

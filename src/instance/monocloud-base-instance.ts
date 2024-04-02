@@ -38,6 +38,7 @@ import {
 import { MonoCloudValidationError } from '../errors/monocloud-validation-error';
 import { debug, getAcrValues, isAbsoluteUrl, isSameHost, now } from '../utils';
 import { OAuthClient } from '../openid-client/oauth-client';
+import { MonoCloudOPError } from '../errors/monocloud-op-error';
 
 export class MonoCloudBaseInstance {
   private readonly options: MonoCloudOptionsBase;
@@ -62,127 +63,136 @@ export class MonoCloudBaseInstance {
   ): Promise<any> {
     debug('Starting sign-in handler');
 
-    // Merge the sign-in options and the default options
-    const opt = {
-      ...(signInOptions || {}),
-      authParams: {
-        ...this.options.defaultAuthParams,
-        ...signInOptions?.authParams,
-      },
-    };
+    try {
+      // Merge the sign-in options and the default options
+      const opt = {
+        ...(signInOptions || {}),
+        authParams: {
+          ...this.options.defaultAuthParams,
+          ...signInOptions?.authParams,
+        },
+      };
 
-    let appState: ApplicationState = {};
+      let appState: ApplicationState = {};
 
-    // Set the application state if the onSetApplicationState function is set
-    if (this.options.onSetApplicationState) {
-      appState = await this.options.onSetApplicationState(request);
+      // Set the application state if the onSetApplicationState function is set
+      if (this.options.onSetApplicationState) {
+        appState = await this.options.onSetApplicationState(request);
 
-      // Validate the custom sign-in state
-      if (
-        appState === null ||
-        typeof appState !== 'object' ||
-        Array.isArray(appState)
-      ) {
-        throw new MonoCloudValidationError(
-          'Invalid Application State. Expected state to be an object'
-        );
+        // Validate the custom sign-in state
+        if (
+          appState === null ||
+          typeof appState !== 'object' ||
+          Array.isArray(appState)
+        ) {
+          throw new MonoCloudValidationError(
+            'Invalid Application State. Expected state to be an object'
+          );
+        }
       }
+
+      // Set the return url if passed down
+      const retUrl = request.getQuery('return_url') ?? opt.returnUrl;
+      if (typeof retUrl === 'string' && retUrl) {
+        opt.returnUrl = retUrl;
+      }
+
+      // Validate the options
+      const { error } = signInOptionsSchema.validate(opt, { abortEarly: true });
+
+      if (error) {
+        throw new MonoCloudValidationError(error.details[0].message);
+      }
+
+      // Generate the state, nonce & code verifier
+      const state = this.client.generateState();
+      const nonce = this.client.generateNonce();
+      const verifier = this.client.generateCodeVerifier();
+      const codeChallenge = await this.client.codeChallenge(verifier);
+      const maxAge =
+        typeof opt.authParams.max_age === 'number'
+          ? opt.authParams.max_age
+          : undefined;
+
+      // Ensure that return to is present, if not then use the base url as the return to
+      const returnUrl = encodeURIComponent(
+        opt.returnUrl ?? this.options.appUrl
+      );
+
+      const redirectUrl = new URL(
+        this.options.routes.callback,
+        this.options.appUrl
+      ).toString();
+
+      // Generate the monocloud state
+      const monoCloudState: MonoCloudState = {
+        returnUrl,
+        state,
+        nonce,
+        verifier,
+        maxAge,
+        appState: JSON.stringify(appState),
+      };
+
+      // Create the Authorization Parameters
+      let params: AuthorizationParameters = {
+        redirect_uri: redirectUrl,
+        ...opt.authParams,
+        nonce,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+      };
+
+      // Set the Authenticator if passed down
+      const authenticator =
+        request.getQuery('authenticator') ?? opt.authenticator;
+      if (typeof authenticator === 'string' && authenticator) {
+        let acrValues = getAcrValues(params.acr_values);
+        acrValues = acrValues.filter(x => x.startsWith('authenticator:'));
+        acrValues.push(`authenticator:${authenticator}`);
+        params.acr_values = acrValues.join(' ');
+      }
+
+      // Set the login hint if passed down
+      const loginHint = request.getQuery('login_hint') ?? opt.loginHint;
+      if (typeof loginHint === 'string' && loginHint) {
+        params.login_hint = loginHint;
+      }
+
+      // Set the prompt to register if passed down
+      const register = request.getQuery('register') ?? opt.register?.toString();
+      if (typeof register === 'string' && register.toLowerCase() === 'true') {
+        params.prompt = 'create';
+      }
+
+      // if options is set to use par or if the issuer requires par then use it
+      const metadata = await this.client.getMetadata();
+      if (
+        this.options.usePar ||
+        metadata.require_pushed_authorization_requests
+      ) {
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        const { request_uri } =
+          await this.client.pushedAuthorizationRequest(params);
+        params = { request_uri, scope: undefined, response_type: undefined };
+      }
+
+      // Create the authorize url
+      const authUrl = await this.client.authorizationUrl(params);
+
+      // Set the state cookie
+      await this.stateService.setState(
+        response,
+        monoCloudState,
+        params.response_mode === 'form_post' ? 'none' : undefined
+      );
+
+      // Redirect to the authorize url
+      response.redirect(authUrl, 302);
+    } catch (error) {
+      this.handleCatchAll(error, response);
     }
-
-    // Set the return url if passed down
-    const retUrl = request.getQuery('return_url') ?? opt.returnUrl;
-    if (typeof retUrl === 'string' && retUrl) {
-      opt.returnUrl = retUrl;
-    }
-
-    // Validate the options
-    const { error } = signInOptionsSchema.validate(opt, { abortEarly: true });
-
-    if (error) {
-      throw new MonoCloudValidationError(error.details[0].message);
-    }
-
-    // Generate the state, nonce & code verifier
-    const state = this.client.generateState();
-    const nonce = this.client.generateNonce();
-    const verifier = this.client.generateCodeVerifier();
-    const codeChallenge = await this.client.codeChallenge(verifier);
-    const maxAge =
-      typeof opt.authParams.max_age === 'number'
-        ? opt.authParams.max_age
-        : undefined;
-
-    // Ensure that return to is present, if not then use the base url as the return to
-    const returnUrl = encodeURIComponent(opt.returnUrl ?? this.options.appUrl);
-
-    const redirectUrl = new URL(
-      this.options.routes.callback,
-      this.options.appUrl
-    ).toString();
-
-    // Generate the monocloud state
-    const monoCloudState: MonoCloudState = {
-      returnUrl,
-      state,
-      nonce,
-      verifier,
-      maxAge,
-      appState: JSON.stringify(appState),
-    };
-
-    // Create the Authorization Parameters
-    let params: AuthorizationParameters = {
-      redirect_uri: redirectUrl,
-      ...opt.authParams,
-      nonce,
-      state,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
-    };
-
-    // Set the Authenticator if passed down
-    const authenticator =
-      request.getQuery('authenticator') ?? opt.authenticator;
-    if (typeof authenticator === 'string' && authenticator) {
-      let acrValues = getAcrValues(params.acr_values);
-      acrValues = acrValues.filter(x => x.startsWith('authenticator:'));
-      acrValues.push(`authenticator:${authenticator}`);
-      params.acr_values = acrValues.join(' ');
-    }
-
-    // Set the login hint if passed down
-    const loginHint = request.getQuery('login_hint') ?? opt.loginHint;
-    if (typeof loginHint === 'string' && loginHint) {
-      params.login_hint = loginHint;
-    }
-
-    // Set the prompt to register if passed down
-    const register = request.getQuery('register') ?? opt.register?.toString();
-    if (typeof register === 'string' && register.toLowerCase() === 'true') {
-      params.prompt = 'create';
-    }
-
-    // if options is set to use par or if the issuer requires par then use it
-    const metadata = await this.client.getMetadata();
-    if (this.options.usePar || metadata.require_pushed_authorization_requests) {
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      const { request_uri } =
-        await this.client.pushedAuthorizationRequest(params);
-      params = { request_uri, scope: undefined, response_type: undefined };
-    }
-
-    // Create the authorize url
-    const authUrl = await this.client.authorizationUrl(params);
-
-    // Set the state cookie
-    await this.stateService.setState(
-      response,
-      monoCloudState,
-      params.response_mode === 'form_post' ? 'none' : undefined
-    );
-
-    // Redirect to the authorize url
-    response.redirect(authUrl, 302);
 
     return response.done();
   }
@@ -194,98 +204,107 @@ export class MonoCloudBaseInstance {
   ): Promise<any> {
     debug('Starting callback handler');
 
-    // Validate the callback Options
-    if (callbackOptions) {
-      const { error } = callbackOptionsSchema.validate(callbackOptions, {
-        abortEarly: true,
-      });
-
-      if (error) {
-        throw new MonoCloudValidationError(error.details[0].message);
-      }
-    }
-
-    // Get the state value
-    const monoCloudState = await this.stateService.getState(request, response);
-
-    // Handle invalid state
-    if (!monoCloudState) {
-      throw new MonoCloudValidationError('Invalid State');
-    }
-
-    const { method, url, body } = await request.getRawRequest();
-
-    let fullUrl = url;
-
-    // check if the url is a relative url
-    if (!isAbsoluteUrl(url)) {
-      fullUrl = new URL(url, this.options.appUrl).toString();
-    }
-
-    // Get the search parameters or the body
-    const payload =
-      method.toLowerCase() === 'post'
-        ? new URLSearchParams(body)
-        : new URL(fullUrl).searchParams;
-
-    // Get the parameters returned from the server
-    const callbackParams = await this.client.callbackParams(
-      payload,
-      monoCloudState.state
-    );
-
-    // Get the redirect Url to be validated
-    const redirectUri =
-      callbackOptions?.authParams?.redirect_uri ??
-      new URL(this.options.routes.callback, this.options.appUrl).toString();
-
-    // Get the tokens
-    const tokens = await this.client.callback(
-      redirectUri,
-      callbackParams,
-      monoCloudState.verifier as string,
-      monoCloudState.nonce,
-      monoCloudState.maxAge,
-      callbackOptions?.authParams
-    );
-
-    // Parse the client state
-    const appState: ApplicationState = JSON.parse(monoCloudState.appState);
-
-    // Generate the user session
-    const session = await this.getSessionFromCallback(
-      tokens,
-      appState,
-      callbackOptions
-    );
-
-    // Set the user session
-    await this.sessionService.setSession(request, response, session);
-
-    // Return to base url if no return url was set
-    if (!monoCloudState.returnUrl) {
-      response.redirect(this.options.appUrl);
-      return response.done();
-    }
-
-    // Return to a valid return to url
     try {
-      const decodedUrl = decodeURIComponent(monoCloudState.returnUrl);
+      // Validate the callback Options
+      if (callbackOptions) {
+        const { error } = callbackOptionsSchema.validate(callbackOptions, {
+          abortEarly: true,
+        });
 
-      if (!isAbsoluteUrl(decodedUrl)) {
-        response.redirect(new URL(decodedUrl, this.options.appUrl).toString());
+        if (error) {
+          throw new MonoCloudValidationError(error.details[0].message);
+        }
+      }
+
+      // Get the state value
+      const monoCloudState = await this.stateService.getState(
+        request,
+        response
+      );
+
+      // Handle invalid state
+      if (!monoCloudState) {
+        throw new MonoCloudValidationError('Invalid State');
+      }
+
+      const { method, url, body } = await request.getRawRequest();
+
+      let fullUrl = url;
+
+      // check if the url is a relative url
+      if (!isAbsoluteUrl(url)) {
+        fullUrl = new URL(url, this.options.appUrl).toString();
+      }
+
+      // Get the search parameters or the body
+      const payload =
+        method.toLowerCase() === 'post'
+          ? new URLSearchParams(body)
+          : new URL(fullUrl).searchParams;
+
+      // Get the parameters returned from the server
+      const callbackParams = await this.client.callbackParams(
+        payload,
+        monoCloudState.state
+      );
+
+      // Get the redirect Url to be validated
+      const redirectUri =
+        callbackOptions?.authParams?.redirect_uri ??
+        new URL(this.options.routes.callback, this.options.appUrl).toString();
+
+      // Get the tokens
+      const tokens = await this.client.callback(
+        redirectUri,
+        callbackParams,
+        monoCloudState.verifier as string,
+        monoCloudState.nonce,
+        monoCloudState.maxAge,
+        callbackOptions?.authParams
+      );
+
+      // Parse the client state
+      const appState: ApplicationState = JSON.parse(monoCloudState.appState);
+
+      // Generate the user session
+      const session = await this.getSessionFromCallback(
+        tokens,
+        appState,
+        callbackOptions
+      );
+
+      // Set the user session
+      await this.sessionService.setSession(request, response, session);
+
+      // Return to base url if no return url was set
+      if (!monoCloudState.returnUrl) {
+        response.redirect(this.options.appUrl);
         return response.done();
       }
 
-      if (isSameHost(this.options.appUrl, decodedUrl)) {
-        response.redirect(decodedUrl);
-        return response.done();
+      // Return to a valid return to url
+      try {
+        const decodedUrl = decodeURIComponent(monoCloudState.returnUrl);
+
+        if (!isAbsoluteUrl(decodedUrl)) {
+          response.redirect(
+            new URL(decodedUrl, this.options.appUrl).toString()
+          );
+          return response.done();
+        }
+
+        if (isSameHost(this.options.appUrl, decodedUrl)) {
+          response.redirect(decodedUrl);
+          return response.done();
+        }
+      } catch (e) {
+        // do nothing
       }
-    } catch (e) {
-      // do nothing
+
+      response.redirect(this.options.appUrl);
+    } catch (error) {
+      this.handleCatchAll(error, response);
     }
-
-    response.redirect(this.options.appUrl);
 
     return response.done();
   }
@@ -297,71 +316,76 @@ export class MonoCloudBaseInstance {
   ): Promise<any> {
     debug('Starting userinfo handler');
 
-    // Validate the User Info options
-    if (userinfoOptions) {
-      const { error } = userInfoOptionsSchema.validate(userinfoOptions, {
-        abortEarly: true,
-      });
+    try {
+      // Validate the User Info options
+      if (userinfoOptions) {
+        const { error } = userInfoOptionsSchema.validate(userinfoOptions, {
+          abortEarly: true,
+        });
 
-      if (error) {
-        throw new MonoCloudValidationError(error.details[0].message);
+        if (error) {
+          throw new MonoCloudValidationError(error.details[0].message);
+        }
       }
-    }
 
-    const refreshUserInfo =
-      userinfoOptions?.refresh ?? this.options.refreshUserInfo;
+      const refreshUserInfo =
+        userinfoOptions?.refresh ?? this.options.refreshUserInfo;
 
-    // Get the user session
-    const session = await this.sessionService.getSession(
-      request,
-      response,
-      !refreshUserInfo
-    );
-
-    // Handle no session
-    if (!session) {
-      response.setNoCache();
-      response.noContent();
-      return response.done();
-    }
-
-    // If refetch is false then return the session
-    if (!refreshUserInfo || !session.accessToken) {
-      response.sendJson(session.user);
-      return response.done();
-    }
-
-    // Get the new data from the user info endpoint
-    const uiClaims = await this.client.userinfo(session.accessToken);
-
-    // Set the session userinfo claims
-    session.user = { ...session.user, ...uiClaims };
-
-    if (this.options.onSessionCreating) {
-      await this.options.onSessionCreating(
-        session,
-        undefined,
-        uiClaims,
-        undefined
+      // Get the user session
+      const session = await this.sessionService.getSession(
+        request,
+        response,
+        !refreshUserInfo
       );
+
+      // Handle no session
+      if (!session) {
+        response.setNoCache();
+        response.noContent();
+        return response.done();
+      }
+
+      // If refetch is false then return the session
+      if (!refreshUserInfo || !session.accessToken) {
+        response.sendJson(session.user);
+        return response.done();
+      }
+
+      // Get the new data from the user info endpoint
+      const uiClaims = await this.client.userinfo(session.accessToken);
+
+      // Set the session userinfo claims
+      session.user = { ...session.user, ...uiClaims };
+
+      if (this.options.onSessionCreating) {
+        await this.options.onSessionCreating(
+          session,
+          undefined,
+          uiClaims,
+          undefined
+        );
+      }
+
+      // Update the session containing the new claims
+      const updated = await this.sessionService.updateSession(
+        request,
+        response,
+        session
+      );
+
+      // Handle session was not updated successfully
+      if (!updated) {
+        response.setNoCache();
+        response.noContent();
+        return response.done();
+      }
+
+      // Return the Claims
+      response.sendJson(session.user);
+    } catch (error) {
+      this.handleCatchAll(error, response);
     }
 
-    // Update the session containing the new claims
-    const updated = await this.sessionService.updateSession(
-      request,
-      response,
-      session
-    );
-
-    // Handle session was not updated successfully
-    if (!updated) {
-      response.setNoCache();
-      response.noContent();
-      return response.done();
-    }
-
-    // Return the Claims
-    response.sendJson(session.user);
     return response.done();
   }
 
@@ -372,73 +396,78 @@ export class MonoCloudBaseInstance {
   ): Promise<any> {
     debug('Starting sign-out handler');
 
-    // Validate the sign-out options
-    if (signOutOptions) {
-      const { error } = signOutOptionsSchema.validate(signOutOptions, {
-        abortEarly: true,
+    try {
+      // Validate the sign-out options
+      if (signOutOptions) {
+        const { error } = signOutOptionsSchema.validate(signOutOptions, {
+          abortEarly: true,
+        });
+
+        if (error) {
+          throw new MonoCloudValidationError(error.details[0].message);
+        }
+      }
+
+      // Build the return to url
+      let returnUrl =
+        signOutOptions?.post_logout_url ??
+        this.options.postLogoutRedirectUri ??
+        this.options.appUrl;
+
+      // Set the return url if passed down
+      const retUrl = request.getQuery('post_logout_url');
+      if (typeof retUrl === 'string' && retUrl) {
+        const { error } = signOutOptionsSchema.validate({
+          post_logout_url: retUrl,
+        });
+
+        if (!error) {
+          returnUrl = retUrl;
+        }
+      }
+
+      // Ensure the return to is an absolute one
+      if (!isAbsoluteUrl(returnUrl)) {
+        returnUrl = new URL(returnUrl, this.options.appUrl).toString();
+      }
+
+      // Get the current session
+      const session = await this.sessionService.getSession(
+        request,
+        response,
+        false
+      );
+
+      // Redirect to return url if session doesnt exist
+      if (!session) {
+        response.redirect(returnUrl);
+        return response.done();
+      }
+
+      await this.sessionService.removeSession(request, response);
+
+      // Handle Federated Logout
+      const isFederatedLogout =
+        signOutOptions?.federatedLogout ?? this.options.federatedLogout;
+
+      if (!isFederatedLogout) {
+        response.redirect(returnUrl);
+        return response.done();
+      }
+
+      // Build the end session Url
+      const url = await this.client.endSessionUrl({
+        ...(signOutOptions?.signOutParams ?? {}),
+        id_token_hint: session.idToken,
+        post_logout_redirect_uri: returnUrl,
       });
 
-      if (error) {
-        throw new MonoCloudValidationError(error.details[0].message);
-      }
+      // Redirect the user to the end session endpoint
+      response.redirect(url);
+    } catch (error) {
+      this.handleCatchAll(error, response);
     }
 
-    // Build the return to url
-    let returnUrl =
-      signOutOptions?.post_logout_url ??
-      this.options.postLogoutRedirectUri ??
-      this.options.appUrl;
-
-    // Set the return url if passed down
-    const retUrl = request.getQuery('post_logout_url');
-    if (typeof retUrl === 'string' && retUrl) {
-      const { error } = signOutOptionsSchema.validate({
-        post_logout_url: retUrl,
-      });
-
-      if (!error) {
-        returnUrl = retUrl;
-      }
-    }
-
-    // Ensure the return to is an absolute one
-    if (!isAbsoluteUrl(returnUrl)) {
-      returnUrl = new URL(returnUrl, this.options.appUrl).toString();
-    }
-
-    // Get the current session
-    const session = await this.sessionService.getSession(
-      request,
-      response,
-      false
-    );
-
-    // Redirect to return url if session doesnt exist
-    if (!session) {
-      response.redirect(returnUrl);
-      return response.done();
-    }
-
-    await this.sessionService.removeSession(request, response);
-
-    // Handle Federated Logout
-    const isFederatedLogout =
-      signOutOptions?.federatedLogout ?? this.options.federatedLogout;
-
-    if (!isFederatedLogout) {
-      response.redirect(returnUrl);
-      return response.done();
-    }
-
-    // Build the end session Url
-    const url = await this.client.endSessionUrl({
-      ...(signOutOptions?.signOutParams ?? {}),
-      id_token_hint: session.idToken,
-      post_logout_redirect_uri: returnUrl,
-    });
-
-    // Redirect the user to the end session endpoint
-    response.redirect(url);
     return response.done();
   }
 
@@ -448,35 +477,40 @@ export class MonoCloudBaseInstance {
   ): Promise<any> {
     debug('Starting back-channel logout handler');
 
-    response.setNoCache();
+    try {
+      response.setNoCache();
 
-    if (!this.options.onBackChannelLogout) {
-      response.notFound();
-      return response.done();
+      if (!this.options.onBackChannelLogout) {
+        response.notFound();
+        return response.done();
+      }
+
+      const { method, body } = await request.getRawRequest();
+
+      if (method.toLowerCase() !== 'post') {
+        response.methodNotAllowed();
+        return response.done();
+      }
+
+      const params = new URLSearchParams(body);
+      const logoutToken = params.get('logout_token');
+
+      if (!logoutToken) {
+        throw new MonoCloudValidationError('Missing Logout Token');
+      }
+
+      const { sid, sub } = await this.verifyLogoutToken(
+        logoutToken,
+        await this.client.getMetadata()
+      );
+
+      await this.options.onBackChannelLogout(sub, sid as any);
+
+      response.noContent();
+    } catch (error) {
+      this.handleCatchAll(error, response);
     }
 
-    const { method, body } = await request.getRawRequest();
-
-    if (method.toLowerCase() !== 'post') {
-      response.methodNotAllowed();
-      return response.done();
-    }
-
-    const params = new URLSearchParams(body);
-    const logoutToken = params.get('logout_token');
-
-    if (!logoutToken) {
-      throw new MonoCloudValidationError('Missing Logout Token');
-    }
-
-    const { sid, sub } = await this.verifyLogoutToken(
-      logoutToken,
-      await this.client.getMetadata()
-    );
-
-    await this.options.onBackChannelLogout(sub, sid as any);
-
-    response.noContent();
     return response.done();
   }
 
@@ -715,7 +749,7 @@ export class MonoCloudBaseInstance {
       !payload.events ||
       typeof payload.events !== 'object'
     ) {
-      throw new MonoCloudValidationError('Invalid logout token');
+      throw new MonoCloudOPError('Invalid logout token');
     }
 
     const event = (payload.events as any)[
@@ -723,9 +757,25 @@ export class MonoCloudBaseInstance {
     ];
 
     if (!event || typeof event !== 'object') {
-      throw new MonoCloudValidationError('Invalid logout token');
+      throw new MonoCloudOPError('Invalid logout token');
     }
 
     return payload;
+  }
+
+  private handleCatchAll(error: unknown, res: MonoCloudResponse) {
+    debug((error as any).message);
+
+    if (error instanceof MonoCloudOPError) {
+      if ('error_description' in error) {
+        debug(error.error_description);
+      }
+
+      res.sendJson({ message: error.message }, 400);
+
+      return;
+    }
+
+    res.internalServerError();
   }
 }

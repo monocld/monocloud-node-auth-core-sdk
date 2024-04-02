@@ -21,15 +21,11 @@ import {
   defaultStoreKeyForTest,
   getSessionCookie,
 } from './test-helpers';
-import {
-  AuthorizationServer,
-  OperationProcessingError,
-} from '../src/openid-client/oauth4webapi';
+import { AuthorizationServer } from '../src/openid-client/oauth4webapi';
 import { decryptData, encryptData, now } from '../src/utils';
 import { MonoCloudValidationError } from '../src/errors/monocloud-validation-error';
 import { JWK } from 'jose/dist/types/types';
 import { freeze, reset, travel } from 'timekeeper';
-import { MonoCloudOPError } from '../src/errors/monocloud-op-error';
 
 const setupDiscovery = (discoveryDoc: Partial<AuthorizationServer> = {}) => {
   nock(defaultConfig.issuer)
@@ -552,8 +548,30 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('should return bad request if there is an op error', async () => {
+        nock(defaultConfig.issuer)
+          .get('/.well-known/openid-configuration')
+          .reply(400, {
+            error: 'server_error',
+            error_description: 'bad things are happening',
+          });
+
+        const instance = getConfiguredInstance();
+
+        const cookies = {};
+        const req = new TestReq({ cookies });
+        const res = new TestRes(cookies);
+
+        await instance.signIn(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          '"response" is not a conform Authorization Server Metadata response'
+        );
+      });
+
       [1, null, undefined, Symbol('test'), true, []].forEach(x => {
-        it(`should throw error if onSetApplicationState returns a non object (${Array.isArray(x) ? 'Array' : typeof x})`, async () => {
+        it(`should return internal server error if onSetApplicationState returns a non object (${Array.isArray(x) ? 'Array' : typeof x})`, async () => {
           setupDiscovery({
             authorization_endpoint: 'https://op.example.com/authorize',
           });
@@ -565,21 +583,15 @@ describe('MonoCloud Base Instance', () => {
           const req = new TestReq({ cookies });
           const res = new TestRes(cookies);
 
-          try {
-            await instance.signIn(req, res);
-            throw new Error();
-          } catch (error) {
-            expect(error).toBeInstanceOf(MonoCloudValidationError);
-            expect(error.message).toBe(
-              'Invalid Application State. Expected state to be an object'
-            );
-          }
+          await instance.signIn(req, res);
+
+          expect(res.res.statusCode).toBe(500);
         });
       });
 
       ['code token', 'code id_token', 'code token id_token', 'token'].forEach(
-        response_type => {
-          it('should throw error if response type from options is unsupported', async () => {
+        (response_type, i) => {
+          it(`should return internal server error if response type from options is unsupported ${i + 1} of 4`, async () => {
             setupDiscovery({
               authorization_endpoint: 'https://op.example.com/authorize',
             });
@@ -589,17 +601,11 @@ describe('MonoCloud Base Instance', () => {
             const req = new TestReq({ cookies });
             const res = new TestRes(cookies);
 
-            try {
-              await instance.signIn(req, res, {
-                authParams: { response_type },
-              });
-              throw new Error();
-            } catch (error) {
-              expect(error).toBeInstanceOf(MonoCloudValidationError);
-              expect(error.message).toBe(
-                '"authParams.response_type" must be [code]'
-              );
-            }
+            await instance.signIn(req, res, {
+              authParams: { response_type },
+            });
+
+            expect(res.res.statusCode).toBe(500);
           });
         }
       );
@@ -904,7 +910,7 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
-      it('should throw invalid state error if state is not found', async () => {
+      it('should return internal server error error if state is not found', async () => {
         const cookies = { state: { value: 'null' } } as any;
 
         const instance = getConfiguredInstance();
@@ -914,55 +920,40 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes(cookies);
 
-        try {
-          await instance.callback(req, res);
-          throw new Error();
-        } catch (error) {
-          expect(error).toBeInstanceOf(MonoCloudValidationError);
-          expect(error.message).toBe('Invalid State');
-        }
+        await instance.callback(req, res);
+
+        expect(res.res.statusCode).toBe(500);
       });
 
       [
-        [
-          {
-            authParams: {
-              scope: 'abc',
-            },
+        {
+          authParams: {
+            scope: 'abc',
           },
-          'Scope must contain openid',
-        ],
-        [
-          {
-            authParams: {
-              response_type: 'anything other than code',
-            },
+        },
+
+        {
+          authParams: {
+            response_type: 'anything other than code',
           },
-          '"authParams.response_type" must be [code]',
-        ],
-        [
-          {
-            authParams: {
-              response_mode: 'invalid',
-            },
+        },
+
+        {
+          authParams: {
+            response_mode: 'invalid',
           },
-          '"authParams.response_mode" must be one of [query, form_post]',
-        ],
-        [{ userinfo: null }, '"userinfo" is not allowed'],
-      ].forEach(([opt, expectedMessage]) => {
-        it('should throw validation error if wrong callback options are passed in', async () => {
+        },
+        { userinfo: null },
+      ].forEach(opt => {
+        it('should return internal server error if wrong callback options are passed in', async () => {
           const instance = getConfiguredInstance();
 
           const req = new TestReq();
           const res = new TestRes();
 
-          try {
-            await instance.callback(req, res, opt as any);
-            throw new Error();
-          } catch (error) {
-            expect(error).toBeInstanceOf(MonoCloudValidationError);
-            expect(error.message).toBe(expectedMessage);
-          }
+          await instance.callback(req, res, opt as any);
+
+          expect(res.res.statusCode).toBe(500);
         });
       });
 
@@ -1086,7 +1077,7 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
-      it('throws error if state parameter mismatches', async () => {
+      it('should return bad request if state parameter mismatches', async () => {
         setupDiscovery();
 
         const cookies = {} as any;
@@ -1102,18 +1093,15 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes(cookies);
 
-        try {
-          await instance.callback(req, res);
-          throw new Error();
-        } catch (error) {
-          expect(error).toBeInstanceOf(MonoCloudOPError);
-          expect(error.message).toBe(
-            'unexpected "state" response parameter value'
-          );
-        }
+        await instance.callback(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          'unexpected "state" response parameter value'
+        );
       });
 
-      it('throws error if nonce parameter mismatches', async () => {
+      it('should return bad request if nonce parameter mismatches', async () => {
         setupTokenEndpoint();
 
         const cookies = {} as any;
@@ -1131,16 +1119,15 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes(cookies);
 
-        try {
-          await instance.callback(req, res);
-          throw new Error();
-        } catch (error) {
-          expect(error).toBeInstanceOf(OperationProcessingError);
-          expect(error.message).toBe('unexpected ID Token "nonce" claim value');
-        }
+        await instance.callback(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          'unexpected ID Token "nonce" claim value'
+        );
       });
 
-      it('validates max age', async () => {
+      it('should return bad request if the max age specified has passed', async () => {
         createdIdToken = await createTestIdToken({
           username: 'oooooooooosername',
           nonce: '123',
@@ -1180,15 +1167,12 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes(cookies);
 
-        try {
-          await instance.callback(req, res);
-          throw new Error();
-        } catch (error) {
-          expect(error).toBeInstanceOf(OperationProcessingError);
-          expect(error.message).toBe(
-            'too much time has elapsed since the last End-User authentication'
-          );
-        }
+        await instance.callback(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          'too much time has elapsed since the last End-User authentication'
+        );
       });
 
       it('can add custom fields to session by passing in onSessionCreating', async () => {
@@ -1405,6 +1389,37 @@ describe('MonoCloud Base Instance', () => {
             },
           },
         });
+      });
+
+      it('should return bad request if there is an op error', async () => {
+        nock(defaultConfig.issuer)
+          .get('/.well-known/openid-configuration')
+          .reply(400, {
+            error: 'server_error',
+            error_description: 'bad things are happening',
+          });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+        });
+
+        const cookies = {};
+
+        await setStateCookieValue(cookies);
+
+        const req = new TestReq({
+          cookies,
+          url: '/api/auth/callback?state=peace&code=code',
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.callback(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          '"response" is not a conform Authorization Server Metadata response'
+        );
       });
     });
 
@@ -1655,11 +1670,8 @@ describe('MonoCloud Base Instance', () => {
         expect(res.res.statusCode).toBe(204);
       });
 
-      [
-        [{ refresh: 54 }, '"refresh" must be a boolean'],
-        [[], '"value" must be of type object'],
-      ].forEach(([opt, expectedMessage]) => {
-        it('should throw a validation error if options is a wrong object', async () => {
+      [{ refresh: 54 }, []].forEach(opt => {
+        it('should return internal server error if options is a wrong object', async () => {
           const cookies = {} as any;
 
           const instance = getConfiguredInstance();
@@ -1667,13 +1679,9 @@ describe('MonoCloud Base Instance', () => {
           const req = new TestReq({ cookies });
           const res = new TestRes(cookies);
 
-          try {
-            await instance.userInfo(req, res, opt as any);
-            throw new Error();
-          } catch (error) {
-            expect(error).toBeInstanceOf(MonoCloudValidationError);
-            expect(error.message).toBe(expectedMessage);
-          }
+          await instance.userInfo(req, res, opt as any);
+
+          expect(res.res.statusCode).toBe(500);
         });
       });
 
@@ -1801,6 +1809,49 @@ describe('MonoCloud Base Instance', () => {
           },
           lifetime: { c: oldTime, u: oldTime, e: oldTime + 86400 },
         });
+      });
+
+      it('should return bad request if there is an op error', async () => {
+        nock(defaultConfig.issuer)
+          .get('/.well-known/openid-configuration')
+          .reply(400, {
+            error: 'server_error',
+            error_description: 'bad things are happening',
+          });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+        });
+
+        const cookies = {};
+
+        await setSessionCookieValue(cookies, {
+          session: {
+            user: {
+              sub: 'id',
+              username: 'username',
+              test: '123',
+            },
+            accessToken: 'at',
+            idToken: 'a.b.c',
+            refreshToken: 'rt',
+            accessTokenExpiration: now() + 5,
+            scopes: 'something',
+          },
+          lifetime: { c: now(), u: now(), e: now() + 86400 },
+        });
+
+        const req = new TestReq({
+          cookies,
+        });
+        const res = new TestRes(cookies);
+
+        await instance.userInfo(req, res, { refresh: true });
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          '"response" is not a conform Authorization Server Metadata response'
+        );
       });
     });
 
@@ -2011,14 +2062,12 @@ describe('MonoCloud Base Instance', () => {
       );
 
       [
-        [{ federatedLogout: 23 }, '"federatedLogout" must be a boolean'],
-        [
-          { post_logout_url: Symbol('test') },
-          '"post_logout_url" must be a string',
-        ],
-        [{ signOutParams: [] }, '"signOutParams" must be of type object'],
-      ].forEach(([opt, expectedMessage], i) => {
-        it(`should throw validation error for invalid configuration options. ${i + 1} of 3`, async () => {
+        { federatedLogout: 23 },
+
+        { post_logout_url: Symbol('test') },
+        { signOutParams: [] },
+      ].forEach((opt, i) => {
+        it(`should return internal server error for invalid configuration options. ${i + 1} of 3`, async () => {
           setupDiscovery({
             end_session_endpoint: 'https://op.example.com/endsession',
           });
@@ -2037,13 +2086,9 @@ describe('MonoCloud Base Instance', () => {
           });
           const res = new TestRes(cookies);
 
-          try {
-            await instance.signOut(req, res, opt as any);
-            throw new Error();
-          } catch (error) {
-            expect(error).toBeInstanceOf(MonoCloudValidationError);
-            expect(error.message).toBe(expectedMessage);
-          }
+          await instance.signOut(req, res, opt as any);
+
+          expect(res.res.statusCode).toBe(500);
         });
       });
 
@@ -2109,6 +2154,36 @@ describe('MonoCloud Base Instance', () => {
             },
           });
         });
+      });
+
+      it('should return bad request if there is an op error', async () => {
+        nock(defaultConfig.issuer)
+          .get('/.well-known/openid-configuration')
+          .reply(400, {
+            error: 'server_error',
+            error_description: 'bad things are happening',
+          });
+
+        const cookies = {} as any;
+
+        await setSessionCookieValue(cookies, {
+          session: {},
+          lifetime: { c: now(), e: now() + 86400, u: now() },
+        });
+
+        const instance = getConfiguredInstance();
+
+        const req = new TestReq({
+          cookies,
+        });
+        const res = new TestRes(cookies);
+
+        await instance.signOut(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          '"response" is not a conform Authorization Server Metadata response'
+        );
       });
     });
 
@@ -2191,7 +2266,7 @@ describe('MonoCloud Base Instance', () => {
         expect(res.res.statusCode).toBe(405);
       });
 
-      it('should throw an error if the logout token was not found in the body', async () => {
+      it('should return internal server error if the logout token was not found in the body', async () => {
         const instance = getConfiguredInstance({
           onBackChannelLogout: () => {},
         });
@@ -2202,15 +2277,13 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes();
 
-        try {
-          await instance.backChannelLogout(req, res);
-        } catch (error) {
-          expect(error).toBeInstanceOf(MonoCloudValidationError);
-          expect(error.message).toBe('Missing Logout Token');
-        }
+        await instance.backChannelLogout(req, res);
+
+        expect(res.res.noCacheSet).toBe(true);
+        expect(res.res.statusCode).toBe(500);
       });
 
-      it('should throw validation error if the event is not an object', async () => {
+      it('should return internal server error if the event is not an object', async () => {
         const backchannelLogoutToken = await createBackchannelLogout({
           events: {
             'http://schemas.openid.net/event/backchannel-logout': null,
@@ -2236,13 +2309,11 @@ describe('MonoCloud Base Instance', () => {
         });
         const res = new TestRes();
 
-        try {
-          await instance.backChannelLogout(req, res);
-          throw new Error();
-        } catch (error) {
-          expect(error).toBeInstanceOf(MonoCloudValidationError);
-          expect(error.message).toBe('Invalid logout token');
-        }
+        await instance.backChannelLogout(req, res);
+
+        expect(res.res.noCacheSet).toBe(true);
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe('Invalid logout token');
       });
 
       [
@@ -2251,7 +2322,7 @@ describe('MonoCloud Base Instance', () => {
         { events: undefined },
         { events: 1 },
       ].forEach((x, i) => {
-        it(`should throw validation error if the logout token is invalid ${i + 1} of 4`, async () => {
+        it(`should return bad request if the logout token is invalid ${i + 1} of 4`, async () => {
           const backchannelLogoutToken = await createBackchannelLogout(x);
           nock('https://op.example.com')
             .get('/jwks')
@@ -2273,14 +2344,39 @@ describe('MonoCloud Base Instance', () => {
           });
           const res = new TestRes();
 
-          try {
-            await instance.backChannelLogout(req, res);
-            throw new Error();
-          } catch (error) {
-            expect(error).toBeInstanceOf(MonoCloudValidationError);
-            expect(error.message).toBe('Invalid logout token');
-          }
+          await instance.backChannelLogout(req, res);
+
+          expect(res.res.noCacheSet).toBe(true);
+          expect(res.res.statusCode).toBe(400);
+          expect(res.res.body.message).toBe('Invalid logout token');
         });
+      });
+
+      it('should return bad request if there is an op error', async () => {
+        nock(defaultConfig.issuer)
+          .get('/.well-known/openid-configuration')
+          .reply(400, {
+            error: 'server_error',
+            error_description: 'bad things are happening',
+          });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+          onBackChannelLogout: () => {},
+        });
+
+        const req = new TestReq({
+          method: 'POST',
+          body: { logout_token: 'token' },
+        });
+        const res = new TestRes();
+
+        await instance.backChannelLogout(req, res);
+
+        expect(res.res.statusCode).toBe(400);
+        expect(res.res.body.message).toBe(
+          '"response" is not a conform Authorization Server Metadata response'
+        );
       });
     });
   });

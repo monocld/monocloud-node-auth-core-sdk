@@ -49,6 +49,11 @@ export class TestRes implements MonoCloudResponse {
     this.res = { cookies: cookies ?? {} };
   }
 
+  internalServerError(): void {
+    this.throwIfDone();
+    this.res.statusCode = 500;
+  }
+
   redirect(url: string, statusCode?: number | undefined): void {
     this.throwIfDone();
     this.res.redirectedUrl = url;

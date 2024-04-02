@@ -32,8 +32,6 @@
     "outDir": "./dist",
     "types": ["jest", "node"]
   },
-  "include": [
-    "src",
-    "tests"
-  ]
+  "include": ["src", "tests"],
+  "exclude": ["tests/oauth4webapi"]
 }

@@ -153,6 +153,7 @@ export interface MonoCloudResponse extends IMonoCloudCookieResponse {
   sendJson(data: any, statusCode?: number): void;
   notFound(): void;
   noContent(): void;
+  internalServerError(): void;
   methodNotAllowed(): void;
   setNoCache(): void;
   done(): any;
