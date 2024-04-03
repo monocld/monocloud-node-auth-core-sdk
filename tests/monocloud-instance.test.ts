@@ -145,7 +145,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res);
@@ -187,7 +187,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res, {
@@ -238,7 +238,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res, {
@@ -290,7 +290,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res, {
@@ -328,7 +328,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res, {
@@ -366,7 +366,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res, {
@@ -407,6 +407,7 @@ describe('MonoCloud Base Instance', () => {
         const req = new TestReq({
           cookies,
           query: { authenticator: 'gooooooogle' },
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -451,6 +452,7 @@ describe('MonoCloud Base Instance', () => {
         const req = new TestReq({
           cookies,
           query: { login_hint: 'oooosername' },
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -496,6 +498,7 @@ describe('MonoCloud Base Instance', () => {
           const req = new TestReq({
             cookies,
             query: { register: register?.toString() },
+            method: 'GET',
           });
           const res = new TestRes(cookies);
           await instance.signIn(req, res, {
@@ -538,7 +541,7 @@ describe('MonoCloud Base Instance', () => {
         });
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res);
@@ -559,7 +562,7 @@ describe('MonoCloud Base Instance', () => {
         const instance = getConfiguredInstance();
 
         const cookies = {};
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.signIn(req, res);
@@ -580,7 +583,7 @@ describe('MonoCloud Base Instance', () => {
           });
 
           const cookies = {};
-          const req = new TestReq({ cookies });
+          const req = new TestReq({ cookies, method: 'GET' });
           const res = new TestRes(cookies);
 
           await instance.signIn(req, res);
@@ -598,7 +601,7 @@ describe('MonoCloud Base Instance', () => {
             const instance = getConfiguredInstance();
 
             const cookies = {};
-            const req = new TestReq({ cookies });
+            const req = new TestReq({ cookies, method: 'GET' });
             const res = new TestRes(cookies);
 
             await instance.signIn(req, res, {
@@ -648,6 +651,7 @@ describe('MonoCloud Base Instance', () => {
           const cookies = {};
           const req = new TestReq({
             cookies,
+            method: 'GET',
           });
           const res = new TestRes(cookies);
 
@@ -679,6 +683,7 @@ describe('MonoCloud Base Instance', () => {
         const cookies = {};
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -701,6 +706,7 @@ describe('MonoCloud Base Instance', () => {
         const req = new TestReq({
           cookies,
           query: { return_url: '/custom' },
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -722,6 +728,7 @@ describe('MonoCloud Base Instance', () => {
         const cookies = {} as any;
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -729,6 +736,30 @@ describe('MonoCloud Base Instance', () => {
 
         expect(cookies.state.options.sameSite).toBe('none');
       });
+
+      ['DELETE', 'PUT', 'POST', 'PATCH', 'OPTIONS', 'TRACE', 'HEAD'].forEach(
+        (method: any) => {
+          it('should return method not allowed for unsupported methods', async () => {
+            setupDiscovery({
+              authorization_endpoint: 'https://op.example.com/authorize',
+            });
+            const instance = getConfiguredInstance({
+              defaultAuthParams: { response_mode: 'form_post' },
+            });
+
+            const cookies = {} as any;
+            const req = new TestReq({
+              cookies,
+              method,
+            });
+            const res = new TestRes(cookies);
+
+            await instance.signIn(req, res);
+
+            expect(res.res.statusCode).toBe(405);
+          });
+        }
+      );
     });
 
     describe('callback', () => {
@@ -917,6 +948,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -948,7 +980,9 @@ describe('MonoCloud Base Instance', () => {
         it('should return internal server error if wrong callback options are passed in', async () => {
           const instance = getConfiguredInstance();
 
-          const req = new TestReq();
+          const req = new TestReq({
+            method: 'GET',
+          });
           const res = new TestRes();
 
           await instance.callback(req, res, opt as any);
@@ -1421,6 +1455,33 @@ describe('MonoCloud Base Instance', () => {
           '"response" is not a conform Authorization Server Metadata response'
         );
       });
+
+      ['DELETE', 'PUT', 'PATCH', 'OPTIONS', 'TRACE', 'HEAD'].forEach(
+        (method: any) => {
+          it('should return method not allowed for unsupported methods', async () => {
+            setupDiscovery();
+
+            const instance = getConfiguredInstance({
+              idTokenSigningAlg: 'ES256',
+            });
+
+            const cookies = {};
+
+            await setStateCookieValue(cookies);
+
+            const req = new TestReq({
+              cookies,
+              url: '/api/auth/callback?state=peace&code=code',
+              method,
+            });
+            const res = new TestRes(cookies);
+
+            await instance.callback(req, res);
+
+            expect(res.res.statusCode).toBe(405);
+          });
+        }
+      );
     });
 
     describe('userinfo', () => {
@@ -1473,7 +1534,7 @@ describe('MonoCloud Base Instance', () => {
 
         const instance = getConfiguredInstance({ refreshUserInfo: true });
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res);
@@ -1527,7 +1588,7 @@ describe('MonoCloud Base Instance', () => {
 
         const instance = getConfiguredInstance({ refreshUserInfo: false });
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res, { refresh: true });
@@ -1581,7 +1642,7 @@ describe('MonoCloud Base Instance', () => {
 
         const instance = getConfiguredInstance({ refreshUserInfo: true });
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res, { refresh: false });
@@ -1634,7 +1695,7 @@ describe('MonoCloud Base Instance', () => {
 
         const instance = getConfiguredInstance({ refreshUserInfo: false });
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res);
@@ -1661,7 +1722,7 @@ describe('MonoCloud Base Instance', () => {
 
         const instance = getConfiguredInstance();
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res);
@@ -1676,7 +1737,7 @@ describe('MonoCloud Base Instance', () => {
 
           const instance = getConfiguredInstance();
 
-          const req = new TestReq({ cookies });
+          const req = new TestReq({ cookies, method: 'GET' });
           const res = new TestRes(cookies);
 
           await instance.userInfo(req, res, opt as any);
@@ -1724,7 +1785,7 @@ describe('MonoCloud Base Instance', () => {
           },
         });
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res);
@@ -1786,7 +1847,7 @@ describe('MonoCloud Base Instance', () => {
         // @ts-expect-error
         instance.sessionService.updateSession = () => Promise.resolve(false);
 
-        const req = new TestReq({ cookies });
+        const req = new TestReq({ cookies, method: 'GET' });
         const res = new TestRes(cookies);
 
         await instance.userInfo(req, res);
@@ -1843,6 +1904,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -1853,6 +1915,27 @@ describe('MonoCloud Base Instance', () => {
           '"response" is not a conform Authorization Server Metadata response'
         );
       });
+
+      ['DELETE', 'PUT', 'POST', 'PATCH', 'OPTIONS', 'TRACE', 'HEAD'].forEach(
+        (method: any) => {
+          it('should return method not allowed for unsupported methods', async () => {
+            setupDiscovery({
+              userinfo_endpoint: 'https://op.example.com/userinfo',
+            });
+
+            const cookies = {} as any;
+
+            const instance = getConfiguredInstance();
+
+            const req = new TestReq({ cookies, method });
+            const res = new TestRes(cookies);
+
+            await instance.userInfo(req, res);
+
+            expect(res.res.statusCode).toBe(405);
+          });
+        }
+      );
     });
 
     describe('signout', () => {
@@ -1872,6 +1955,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -1913,6 +1997,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -1951,6 +2036,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -1989,6 +2075,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -2037,6 +2124,7 @@ describe('MonoCloud Base Instance', () => {
             const req = new TestReq({
               cookies,
               query: { post_logout_url },
+              method: 'GET',
             });
             const res = new TestRes(cookies);
 
@@ -2083,6 +2171,7 @@ describe('MonoCloud Base Instance', () => {
 
           const req = new TestReq({
             cookies,
+            method: 'GET',
           });
           const res = new TestRes(cookies);
 
@@ -2107,6 +2196,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -2135,6 +2225,7 @@ describe('MonoCloud Base Instance', () => {
 
           const req = new TestReq({
             cookies,
+            method: 'GET',
           });
           const res = new TestRes(cookies);
 
@@ -2175,6 +2266,7 @@ describe('MonoCloud Base Instance', () => {
 
         const req = new TestReq({
           cookies,
+          method: 'GET',
         });
         const res = new TestRes(cookies);
 
@@ -2185,6 +2277,27 @@ describe('MonoCloud Base Instance', () => {
           '"response" is not a conform Authorization Server Metadata response'
         );
       });
+
+      ['DELETE', 'PUT', 'POST', 'PATCH', 'OPTIONS', 'TRACE', 'HEAD'].forEach(
+        (method: any) => {
+          it('should return method not allowed for unsupported methods', async () => {
+            setupDiscovery({
+              userinfo_endpoint: 'https://op.example.com/userinfo',
+            });
+
+            const cookies = {} as any;
+
+            const instance = getConfiguredInstance();
+
+            const req = new TestReq({ cookies, method });
+            const res = new TestRes(cookies);
+
+            await instance.signOut(req, res);
+
+            expect(res.res.statusCode).toBe(405);
+          });
+        }
+      );
     });
 
     describe('backchannelLogout', () => {

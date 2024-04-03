@@ -64,6 +64,12 @@ export class MonoCloudBaseInstance {
     debug('Starting sign-in handler');
 
     try {
+      const { method } = await request.getRawRequest();
+      if (method.toLowerCase() !== 'get') {
+        response.methodNotAllowed();
+        return response.done();
+      }
+
       // Merge the sign-in options and the default options
       const opt = {
         ...(signInOptions || {}),
@@ -205,6 +211,13 @@ export class MonoCloudBaseInstance {
     debug('Starting callback handler');
 
     try {
+      const { method, url, body } = await request.getRawRequest();
+
+      if (method.toLowerCase() !== 'get' && method.toLowerCase() !== 'post') {
+        response.methodNotAllowed();
+        return response.done();
+      }
+
       // Validate the callback Options
       if (callbackOptions) {
         const { error } = callbackOptionsSchema.validate(callbackOptions, {
@@ -226,8 +239,6 @@ export class MonoCloudBaseInstance {
       if (!monoCloudState) {
         throw new MonoCloudValidationError('Invalid State');
       }
-
-      const { method, url, body } = await request.getRawRequest();
 
       let fullUrl = url;
 
@@ -317,6 +328,13 @@ export class MonoCloudBaseInstance {
     debug('Starting userinfo handler');
 
     try {
+      const { method } = await request.getRawRequest();
+
+      if (method.toLowerCase() !== 'get') {
+        response.methodNotAllowed();
+        return response.done();
+      }
+
       // Validate the User Info options
       if (userinfoOptions) {
         const { error } = userInfoOptionsSchema.validate(userinfoOptions, {
@@ -397,6 +415,13 @@ export class MonoCloudBaseInstance {
     debug('Starting sign-out handler');
 
     try {
+      const { method } = await request.getRawRequest();
+
+      if (method.toLowerCase() !== 'get') {
+        response.methodNotAllowed();
+        return response.done();
+      }
+
       // Validate the sign-out options
       if (signOutOptions) {
         const { error } = signOutOptionsSchema.validate(signOutOptions, {
