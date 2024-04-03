@@ -177,7 +177,7 @@ describe('OAuth Client', () => {
   });
 
   describe('client.authorizationUrl()', () => {
-    it('should throw validation error if there is no authorization endpoint', async () => {
+    it('should throw op error if there is no authorization endpoint', async () => {
       try {
         const client = await getConfiguredClient(undefined, {
           issuer: 'https://op.example.com',
@@ -186,7 +186,7 @@ describe('OAuth Client', () => {
         await client.authorizationUrl({});
         throw new Error();
       } catch (err) {
-        expect(err).toBeInstanceOf(MonoCloudValidationError);
+        expect(err).toBeInstanceOf(MonoCloudOPError);
         expect(err.message).toBe('Server has no authorization endpoint');
       }
     });
@@ -440,7 +440,7 @@ describe('OAuth Client', () => {
   });
 
   describe('client.endSessionUrl()', () => {
-    it('should throw validation error end_session_endpoint is not configured', async () => {
+    it('should throw op error end_session_endpoint is not configured', async () => {
       try {
         const client = await getConfiguredClient(undefined, {
           issuer: 'https://op.example.com',
@@ -449,7 +449,7 @@ describe('OAuth Client', () => {
         await client.endSessionUrl({});
         throw new Error();
       } catch (err) {
-        expect(err).toBeInstanceOf(MonoCloudValidationError);
+        expect(err).toBeInstanceOf(MonoCloudOPError);
         expect(err.message).toBe('Server has no end session endpoint');
       }
     });

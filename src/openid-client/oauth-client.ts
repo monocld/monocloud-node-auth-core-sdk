@@ -167,9 +167,7 @@ export class OAuthClient {
     await this.getClient();
 
     if (!this.authServer.authorization_endpoint) {
-      throw new MonoCloudValidationError(
-        'Server has no authorization endpoint'
-      );
+      throw new MonoCloudOPError('Server has no authorization endpoint');
     }
 
     const url = new URL(this.authServer.authorization_endpoint);
@@ -323,7 +321,7 @@ export class OAuthClient {
     await this.getClient();
 
     if (!this.authServer.end_session_endpoint) {
-      throw new MonoCloudValidationError('Server has no end session endpoint');
+      throw new MonoCloudOPError('Server has no end session endpoint');
     }
 
     const url = new URL(this.authServer.end_session_endpoint);
