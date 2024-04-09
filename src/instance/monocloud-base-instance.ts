@@ -36,7 +36,8 @@ import {
   userInfoOptionsSchema,
 } from '../options/validation';
 import { MonoCloudValidationError } from '../errors/monocloud-validation-error';
-import { debug, getAcrValues, isAbsoluteUrl, isSameHost, now } from '../utils';
+import dbug, { Debugger } from 'debug';
+import { getAcrValues, isAbsoluteUrl, isSameHost, now } from '../utils';
 import { OAuthClient } from '../openid-client/oauth-client';
 
 export class MonoCloudBaseInstance {
@@ -48,9 +49,12 @@ export class MonoCloudBaseInstance {
 
   private readonly client: OAuthClient;
 
+  private readonly debug: Debugger;
+
   constructor(partialOptions?: MonoCloudOptions) {
     this.options = getOptions(partialOptions);
-    this.client = new OAuthClient(this.options);
+    this.debug = dbug(this.options.debugger);
+    this.client = new OAuthClient(this.options, this.debug);
     this.stateService = new MonoCloudStateService(this.options);
     this.sessionService = new MonoCloudSessionService(this.options);
   }
@@ -60,7 +64,7 @@ export class MonoCloudBaseInstance {
     response: MonoCloudResponse,
     signInOptions?: SignInOptions
   ): Promise<any> {
-    debug('Starting sign-in handler');
+    this.debug('Starting sign-in handler');
 
     try {
       const { method } = await request.getRawRequest();
@@ -209,7 +213,7 @@ export class MonoCloudBaseInstance {
     response: MonoCloudResponse,
     callbackOptions?: CallbackOptions
   ): Promise<any> {
-    debug('Starting callback handler');
+    this.debug('Starting callback handler');
 
     try {
       const { method, url, body } = await request.getRawRequest();
@@ -326,7 +330,7 @@ export class MonoCloudBaseInstance {
     response: MonoCloudResponse,
     userinfoOptions?: UserInfoOptions
   ): Promise<any> {
-    debug('Starting userinfo handler');
+    this.debug('Starting userinfo handler');
 
     try {
       const { method } = await request.getRawRequest();
@@ -413,7 +417,7 @@ export class MonoCloudBaseInstance {
     response: MonoCloudResponse,
     signOutOptions?: SignOutOptions
   ): Promise<any> {
-    debug('Starting sign-out handler');
+    this.debug('Starting sign-out handler');
 
     try {
       const { method } = await request.getRawRequest();
@@ -501,7 +505,7 @@ export class MonoCloudBaseInstance {
     request: MonoCloudRequest,
     response: MonoCloudResponse
   ): Promise<any> {
-    debug('Starting back-channel logout handler');
+    this.debug('Starting back-channel logout handler');
 
     try {
       response.setNoCache();
@@ -793,7 +797,7 @@ export class MonoCloudBaseInstance {
   }
 
   private handleCatchAll(error: Error, res: MonoCloudResponse) {
-    debug(error.message);
+    console.error(error);
     res.internalServerError();
   }
 }

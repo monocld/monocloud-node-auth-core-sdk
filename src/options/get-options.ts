@@ -232,6 +232,7 @@ export const getOptions = (
           x => x.length
         ) as unknown as (keyof Partial<IdTokenClaims>)[]) ??
       DefaultOptions.filteredIdTokenClaims,
+    debugger: options?.debugger ?? DefaultOptions.debugger,
     userAgent: options?.userAgent ?? DefaultOptions.userAgent,
     onBackChannelLogout: options?.onBackChannelLogout,
     onSetApplicationState: options?.onSetApplicationState,

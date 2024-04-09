@@ -412,6 +412,11 @@ export interface MonoCloudOptionsBase {
   filteredIdTokenClaims: (keyof MonoCloudUser)[];
 
   /**
+   * The name of the debugger instance.
+   */
+  debugger: string;
+
+  /**
    * The name of the user agent.
    */
   userAgent: string;

@@ -1,5 +1,3 @@
-import dbug from 'debug';
-
 export const toB64Url = (input: string) =>
   input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
@@ -58,8 +56,6 @@ export const getNumber = (value?: string): number | undefined => {
 
   return Number.isNaN(p) ? undefined : p;
 };
-
-export const debug = dbug('node-auth-core-sdk');
 
 export const encryptData = async (
   data: string,

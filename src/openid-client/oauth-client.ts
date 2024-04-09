@@ -35,7 +35,8 @@ import {
 import { MonoCloudDiscoveryError } from '../errors/monocloud-discovery-error';
 import { MonoCloudValidationError } from '../errors/monocloud-validation-error';
 import { MonoCloudOPError } from '../errors/monocloud-op-error';
-import { debug, isPresent, now } from '../utils';
+import { isPresent, now } from '../utils';
+import dbug, { Debugger } from 'debug';
 
 export class OAuthClient {
   private client!: Client;
@@ -44,7 +45,7 @@ export class OAuthClient {
 
   constructor(
     private readonly options: MonoCloudOptionsBase,
-    public readonly userAgent?: string
+    private readonly debug: Debugger = dbug('monocloud:oauth-client')
   ) {}
 
   async getClient(): Promise<void> {
@@ -65,7 +66,7 @@ export class OAuthClient {
 
     let authServer: AuthorizationServer;
 
-    debug(`Discovering metadata for ${this.options.issuer}`);
+    this.debug(`Discovering metadata for ${this.options.issuer}`);
 
     try {
       const httpOptions = this.getHttpRequestOptions();
@@ -109,7 +110,7 @@ export class OAuthClient {
 
   getHttpRequestOptions(): HttpRequestOptions {
     const headers = new Headers();
-    headers.set('User-Agent', this.userAgent ?? 'node-auth-core-sdk');
+    headers.set('User-Agent', this.options.userAgent);
 
     return {
       signal: AbortSignal.timeout(this.options.responseTimeout),
@@ -144,7 +145,7 @@ export class OAuthClient {
   }> {
     await this.getClient();
 
-    debug('Starting a pushed authorization request');
+    this.debug('Starting a pushed authorization request');
 
     const response = await pushedAuthorizationRequest(
       this.authServer,
@@ -180,7 +181,7 @@ export class OAuthClient {
       .filter(x => isPresent(x[1]))
       .forEach(([key, value]) => url.searchParams.set(key, value));
 
-    debug(`Generated authorization url ${url.toString()}`);
+    this.debug(`Generated authorization url ${url.toString()}`);
 
     return url.toString();
   }
@@ -191,7 +192,7 @@ export class OAuthClient {
   ): Promise<URLSearchParams> {
     await this.getClient();
 
-    debug('Extracting callback received from server');
+    this.debug('Extracting callback received from server');
 
     try {
       const result = validateAuthResponse(
@@ -229,7 +230,7 @@ export class OAuthClient {
   ): Promise<Tokens> {
     await this.getClient();
 
-    debug('Processing callback received from server');
+    this.debug('Processing callback received from server');
 
     const httpOptions = this.getHttpRequestOptions();
 
@@ -295,7 +296,7 @@ export class OAuthClient {
   async userinfo(accessToken: string): Promise<UserinfoResponse> {
     await this.getClient();
 
-    debug('Starting request to user info endpoint');
+    this.debug('Starting request to user info endpoint');
 
     const httpOptions = this.getHttpRequestOptions();
 
@@ -344,7 +345,7 @@ export class OAuthClient {
       .filter(x => isPresent(x[1]))
       .forEach(([key, value]) => url.searchParams.set(key, value));
 
-    debug(`Generating end session url ${url.toString()}`);
+    this.debug(`Generating end session url ${url.toString()}`);
 
     return url.toString();
   }
@@ -355,7 +356,7 @@ export class OAuthClient {
   ): Promise<Tokens> {
     await this.getClient();
 
-    debug('Starting token refresh');
+    this.debug('Starting token refresh');
 
     const httpOptions = this.getHttpRequestOptions();
 
