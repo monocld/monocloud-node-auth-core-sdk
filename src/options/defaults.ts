@@ -50,4 +50,5 @@ export const DefaultOptions = {
     'at_hash',
     's_hash',
   ],
+  userAgent: 'node-auth-core-sdk',
 };

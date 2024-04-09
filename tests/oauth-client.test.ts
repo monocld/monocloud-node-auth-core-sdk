@@ -12,17 +12,13 @@ import { MonoCloudDiscoveryError } from '../src/errors/monocloud-discovery-error
 
 const getConfiguredClient = async (
   options: Partial<MonoCloudOptionsBase> = {},
-  discoveryDoc: Partial<AuthorizationServer> = {},
-  userAgent?: string
+  discoveryDoc: Partial<AuthorizationServer> = {}
 ): Promise<OAuthClient> => {
   nock(defaultConfig.issuer)
     .get('/.well-known/openid-configuration')
     .reply(200, { ...discoveryDoc });
 
-  const client = new OAuthClient(
-    getOptions({ ...defaultConfig, ...options }),
-    userAgent
-  );
+  const client = new OAuthClient(getOptions({ ...defaultConfig, ...options }));
 
   await client.getClient();
 
@@ -658,8 +654,7 @@ describe('OAuth Client', () => {
         .reply(200, { issuer: 'https://op.example.com' });
 
       const client = new OAuthClient(
-        getOptions({ ...defaultConfig }),
-        'TEST AGENT'
+        getOptions({ ...defaultConfig, userAgent: 'TEST AGENT' })
       );
 
       await client.getClient();

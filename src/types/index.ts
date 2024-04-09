@@ -412,6 +412,11 @@ export interface MonoCloudOptionsBase {
   filteredIdTokenClaims: (keyof MonoCloudUser)[];
 
   /**
+   * The name of the user agent.
+   */
+  userAgent: string;
+
+  /**
    * Optional: A callback function invoked when a back-channel logout event is received.
    */
   onBackChannelLogout?: OnBackChannelLogout;
