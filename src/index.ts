@@ -19,6 +19,6 @@ export type {
   CookieOptions,
 } from './types/internal';
 
-export { isAbsoluteUrl } from './utils';
+export { isAbsoluteUrl, ensureLeadingSlash, removeTrailingSlash } from './utils';
 export { MonoCloudValidationError } from './errors/monocloud-validation-error';
 export { MonoCloudBaseInstance } from './instance/monocloud-base-instance';
