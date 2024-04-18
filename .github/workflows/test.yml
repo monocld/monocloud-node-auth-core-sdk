@@ -1,0 +1,64 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '47 11 * * 1'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/iron # 20
+          cache: 'npm'
+      - run: npm clean-install
+      - run: npm run build
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/iron # 20
+          cache: 'npm'
+      - run: npm clean-install
+      - run: npm run lint
+
+  node:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - version: lts/hydrogen # 18
+            env: --experimental-global-webcrypto
+          - version: lts/iron # 20
+          - version: current
+        suite:
+          - test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version.version }}
+          cache: 'npm'
+          check-latest: true
+      - run: npm clean-install
+      - name: Run Test Suite
+        env:
+          NODE_OPTIONS: ${{ matrix.node-version.env }}
+        run: npm run ${{ matrix.suite }}

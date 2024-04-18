@@ -1,1 +1,1 @@
-# monocloud-node-auth-core-sdk
+# MonoCloud NodeJS Authentication Core SDK
