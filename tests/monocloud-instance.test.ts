@@ -134,6 +134,10 @@ const assertSessionCookieValue = async (
 };
 
 describe('MonoCloud Base Instance', () => {
+  beforeAll(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
   afterEach(nock.cleanAll);
 
   describe('handlers', () => {
@@ -2560,6 +2564,42 @@ describe('MonoCloud Base Instance', () => {
         idToken: 'idtoken',
         refreshToken: 'rt',
       });
+    });
+
+    it('getSession should return the cached session when calling with the same request', async () => {
+      const cookies = {};
+
+      await setSessionCookieValue(cookies, {
+        session: {
+          user: { sub: 'id' },
+          scopes: 'abc',
+          accessToken: 'at',
+          accessTokenExpiration: 8,
+          idToken: 'idtoken',
+          refreshToken: 'rt',
+        },
+        lifetime: { u: now(), e: now() + 4, c: now() },
+      });
+
+      const req = new TestReq({ cookies });
+      const res = new TestRes();
+
+      const instance = getConfiguredInstance();
+
+      const session = await instance.getSession(req, res);
+
+      const cachedSession = await instance.getSession(req, res);
+
+      expect(session).toEqual({
+        user: { sub: 'id' },
+        scopes: 'abc',
+        accessToken: 'at',
+        accessTokenExpiration: 8,
+        idToken: 'idtoken',
+        refreshToken: 'rt',
+      });
+
+      expect(session).toBe(cachedSession);
     });
 
     it('updateSession should update the session', async () => {

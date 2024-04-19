@@ -13,7 +13,13 @@ import {
 const CHUNK_BYTE_SIZE = 4090;
 
 export class MonoCloudSessionService {
-  constructor(private readonly options: MonoCloudOptionsBase) {}
+  constructor(
+    private readonly options: MonoCloudOptionsBase,
+    private readonly cache: WeakMap<
+      IMonoCloudCookieRequest,
+      MonoCloudSession | undefined
+    >
+  ) {}
 
   async setSession(
     req: IMonoCloudCookieRequest,
@@ -172,6 +178,8 @@ export class MonoCloudSessionService {
     req: IMonoCloudCookieRequest,
     res: IMonoCloudCookieResponse
   ): Promise<void> {
+    this.cache.delete(req);
+
     // Get the current cookie value
     const cookieValue = await this.getCookieData(req);
 
@@ -227,6 +235,8 @@ export class MonoCloudSessionService {
     if (isValid) {
       return true;
     }
+
+    this.cache.delete(req);
 
     // If there is a session store then delete the session from the store
     if (this.options.session.store) {
@@ -316,6 +326,8 @@ export class MonoCloudSessionService {
     cookies.forEach(key => {
       res.setCookie(key, '', this.getCookieOptions(new Date(0)));
     });
+
+    this.cache.set(req, session);
   }
 
   private async getCookieData(

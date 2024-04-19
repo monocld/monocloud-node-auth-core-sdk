@@ -51,12 +51,18 @@ export class MonoCloudBaseInstance {
 
   private readonly debug: Debugger;
 
+  private readonly cache: WeakMap<
+    IMonoCloudCookieRequest,
+    MonoCloudSession | undefined
+  >;
+
   constructor(partialOptions?: MonoCloudOptions) {
+    this.cache = new WeakMap();
     this.options = getOptions(partialOptions);
     this.debug = dbug(this.options.debugger);
     this.client = new OAuthClient(this.options, this.debug);
     this.stateService = new MonoCloudStateService(this.options);
-    this.sessionService = new MonoCloudSessionService(this.options);
+    this.sessionService = new MonoCloudSessionService(this.options, this.cache);
   }
 
   async signIn(
@@ -548,8 +554,14 @@ export class MonoCloudBaseInstance {
     request: IMonoCloudCookieRequest,
     response: IMonoCloudCookieResponse
   ): Promise<boolean> {
+    let session;
+
     // Get the session
-    const session = await this.sessionService.getSession(request, response);
+    if (this.cache.has(request)) {
+      session = this.cache.get(request);
+    } else {
+      session = await this.sessionService.getSession(request, response);
+    }
 
     // Return true if the session exists
     return !!session?.user;
@@ -559,6 +571,10 @@ export class MonoCloudBaseInstance {
     request: IMonoCloudCookieRequest,
     response: IMonoCloudCookieResponse
   ): Promise<MonoCloudSession | undefined> {
+    if (this.cache.has(request)) {
+      return Promise.resolve(this.cache.get(request));
+    }
+
     return this.sessionService.getSession(request, response);
   }
 
@@ -597,8 +613,14 @@ export class MonoCloudBaseInstance {
       }
     }
 
+    let session;
+
     // Get the session
-    const session = await this.sessionService.getSession(request, response);
+    if (this.cache.has(request)) {
+      session = this.cache.get(request);
+    } else {
+      session = await this.sessionService.getSession(request, response);
+    }
 
     // Handle no access token
     if (!session?.accessToken) {
