@@ -57,6 +57,14 @@ export class MonoCloudBaseInstance {
     this.client = new OAuthClient(this.options, this.debug);
     this.stateService = new MonoCloudStateService(this.options);
     this.sessionService = new MonoCloudSessionService(this.options);
+
+    /* c8 ignore start */
+    if (process.env.DEBUG && !this.debug.enabled) {
+      dbug.enable(process.env.DEBUG);
+    }
+    /* c8 ignore end */
+
+    this.debug('Debug logging enabled.');
   }
 
   async signIn(
