@@ -180,6 +180,35 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('should have the base path in the redirect uri', async () => {
+        setupDiscovery({
+          authorization_endpoint: 'https://op.example.com/authorize',
+        });
+        const instance = getConfiguredInstance({
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const cookies = {};
+        const req = new TestReq({ cookies, method: 'GET' });
+        const res = new TestRes(cookies);
+
+        await instance.signIn(req, res);
+
+        const url = new URL(res.res.redirectedUrl!);
+
+        const search = Object.fromEntries(url.searchParams.entries());
+        expect(search.redirect_uri).toBe(
+          'https://example.org/basepath/api/auth/callback'
+        );
+
+        assertStateCookieValue(res, {
+          nonce: search.nonce,
+          state: search.state,
+          returnUrl: encodeURIComponent('https://example.org/basepath'),
+          appState: '{}',
+        });
+      });
+
       it('should be able override auth params except nonce, state, code_challenge + method', async () => {
         setupDiscovery({
           authorization_endpoint: 'https://op.example.com/authorize',
@@ -791,12 +820,7 @@ describe('MonoCloud Base Instance', () => {
       });
 
       const setupTokenEndpoint = (
-        requestBodyCheck: any = {
-          code: 'code',
-          code_verifier: 'a',
-          grant_type: 'authorization_code',
-          redirect_uri: 'https://example.org/api/auth/callback',
-        },
+        requestBodyCheck: any = {},
         responseBody: any = {
           access_token: 'at',
           id_token: createdIdToken.idToken,
@@ -811,6 +835,13 @@ describe('MonoCloud Base Instance', () => {
           userinfo_endpoint: 'https://op.example.com/userinfo',
         }
       ) => {
+        requestBodyCheck = {
+          code: 'code',
+          code_verifier: 'a',
+          grant_type: 'authorization_code',
+          redirect_uri: 'https://example.org/api/auth/callback',
+          ...requestBodyCheck,
+        };
         setupDiscovery(discoveryDoc);
 
         nock('https://op.example.com')
@@ -938,6 +969,34 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('should perform a successful callback (with base path)', async () => {
+        setupTokenEndpoint({
+          redirect_uri: 'https://example.org/basepath/api/auth/callback',
+        });
+
+        const cookies = {} as any;
+
+        await setStateCookieValue(cookies, {
+          returnUrl: '/',
+        });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          url: `/api/auth/callback?state=peace&code=code`,
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.callback(req, res);
+
+        expect(res.res.redirectedUrl).toBe('https://example.org/basepath/');
+      });
+
       it('should return internal server error error if state is not found', async () => {
         const cookies = { state: { value: 'null' } } as any;
 
@@ -990,9 +1049,6 @@ describe('MonoCloud Base Instance', () => {
 
       it('can pass in a custom redirect uri in options', async () => {
         setupTokenEndpoint({
-          code: 'code',
-          code_verifier: 'a',
-          grant_type: 'authorization_code',
           redirect_uri: 'https://example.org/custom',
         });
 
@@ -1047,11 +1103,39 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('can pass in a custom redirect uri in options (with base path)', async () => {
+        setupTokenEndpoint({
+          redirect_uri: 'https://example.org/basepath/custom',
+        });
+
+        const cookies = {} as any;
+
+        await setStateCookieValue(cookies, {
+          returnUrl: '/',
+        });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+          routes: {
+            callback: '/custom',
+          },
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          url: '/custom?state=peace&code=code',
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.callback(req, res);
+
+        expect(res.res.redirectedUrl).toBe('https://example.org/basepath/');
+      });
+
       it('can pass in a custom redirect uri in callback handler options, overriding the options', async () => {
         setupTokenEndpoint({
-          code: 'code',
-          code_verifier: 'a',
-          grant_type: 'authorization_code',
           redirect_uri: 'https://example.org/custom/handler',
         });
 
@@ -1279,6 +1363,32 @@ describe('MonoCloud Base Instance', () => {
         expect(res.res.redirectedUrl).toBe('https://example.org');
       });
 
+      it('should redirect to app url if state does not have a redirect url (with base path)', async () => {
+        setupTokenEndpoint({
+          redirect_uri: 'https://example.org/basepath/api/auth/callback',
+        });
+
+        const cookies = {} as any;
+
+        await setStateCookieValue(cookies, { returnUrl: undefined });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          url: 'api/auth/callback?state=peace&code=code',
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.callback(req, res);
+
+        expect(res.res.redirectedUrl).toBe('https://example.org/basepath');
+      });
+
       ['/test', 'https://example.org/test'].forEach(url => {
         it(`should redirect to the return url from the state if the url is ${url.startsWith('/') ? 'Relative' : 'Absolute'}`, async () => {
           setupTokenEndpoint();
@@ -1301,6 +1411,36 @@ describe('MonoCloud Base Instance', () => {
           await instance.callback(req, res);
 
           expect(res.res.redirectedUrl).toBe('https://example.org/test');
+        });
+      });
+
+      ['/test', 'https://example.org/basepath/test'].forEach(url => {
+        it(`should redirect to the return url from the state if the url is ${url.startsWith('/') ? 'Relative' : 'Absolute'} (with basepath)`, async () => {
+          setupTokenEndpoint({
+            redirect_uri: 'https://example.org/basepath/api/auth/callback',
+          });
+
+          const cookies = {} as any;
+
+          await setStateCookieValue(cookies, { returnUrl: url });
+
+          const instance = getConfiguredInstance({
+            idTokenSigningAlg: 'ES256',
+            appUrl: 'https://example.org/basepath',
+          });
+
+          const req = new TestReq({
+            cookies,
+            url: 'api/auth/callback?state=peace&code=code',
+            method: 'GET',
+          });
+          const res = new TestRes(cookies);
+
+          await instance.callback(req, res);
+
+          expect(res.res.redirectedUrl).toBe(
+            'https://example.org/basepath/test'
+          );
         });
       });
 
@@ -1327,6 +1467,34 @@ describe('MonoCloud Base Instance', () => {
         await instance.callback(req, res);
 
         expect(res.res.redirectedUrl).toBe('https://example.org');
+      });
+
+      it('should redirect to the app url if the returnUrl in the state is invalid (with base path)', async () => {
+        setupTokenEndpoint({
+          redirect_uri: 'https://example.org/basepath/api/auth/callback',
+        });
+
+        const cookies = {} as any;
+
+        await setStateCookieValue(cookies, {
+          returnUrl: 'https://someoneelse.com/cb',
+        });
+
+        const instance = getConfiguredInstance({
+          idTokenSigningAlg: 'ES256',
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          url: 'api/auth/callback?state=peace&code=code',
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.callback(req, res);
+
+        expect(res.res.redirectedUrl).toBe('https://example.org/basepath');
       });
 
       it('should not fetch from userinfo if options.userInfo explicitly to false', async () => {
@@ -1959,6 +2127,46 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('should redirect to endSessionUrl (with base path)', async () => {
+        setupDiscovery({
+          end_session_endpoint: 'https://op.example.com/endsession',
+        });
+
+        const cookies = {} as any;
+
+        await setSessionCookieValue(cookies, {
+          session: {},
+          lifetime: { c: now(), e: now() + 86400, u: now() },
+        });
+
+        const instance = getConfiguredInstance({
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.signOut(req, res);
+
+        expect(res.res.redirectedUrl).toBe(
+          `https://op.example.com/endsession?client_id=__test_client_id__&post_logout_redirect_uri=${encodeURIComponent('https://example.org/basepath')}`
+        );
+        expect(cookies.session).toEqual({
+          value: '',
+          options: {
+            domain: undefined,
+            expires: new Date(0),
+            httpOnly: true,
+            path: '/',
+            sameSite: 'lax',
+            secure: true,
+          },
+        });
+      });
+
       it('should redirect to endSessionUrl with post logout redirect uri and id token hint', async () => {
         setupDiscovery({
           end_session_endpoint: 'https://op.example.com/endsession',
@@ -2002,6 +2210,50 @@ describe('MonoCloud Base Instance', () => {
         });
       });
 
+      it('should redirect to endSessionUrl with post logout redirect uri and id token hint (with base path)', async () => {
+        setupDiscovery({
+          end_session_endpoint: 'https://op.example.com/endsession',
+        });
+
+        const cookies = {} as any;
+
+        await setSessionCookieValue(cookies, {
+          session: {
+            idToken: 'a.b.c',
+          },
+          lifetime: { c: now(), e: now() + 86400, u: now() },
+        });
+
+        const instance = getConfiguredInstance({
+          postLogoutRedirectUri: '/test',
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.signOut(req, res);
+
+        expect(res.res.redirectedUrl).toBe(
+          `https://op.example.com/endsession?client_id=__test_client_id__&id_token_hint=${encodeURIComponent('a.b.c')}&post_logout_redirect_uri=${encodeURIComponent('https://example.org/basepath/test')}`
+        );
+
+        expect(cookies.session).toEqual({
+          value: '',
+          options: {
+            domain: undefined,
+            expires: new Date(0),
+            httpOnly: true,
+            path: '/',
+            sameSite: 'lax',
+            secure: true,
+          },
+        });
+      });
+
       it('should redirect to endSessionUrl with post logout configured through handler options', async () => {
         setupDiscovery({
           end_session_endpoint: 'https://op.example.com/endsession',
@@ -2026,6 +2278,47 @@ describe('MonoCloud Base Instance', () => {
 
         expect(res.res.redirectedUrl).toBe(
           `https://op.example.com/endsession?client_id=__test_client_id__&post_logout_redirect_uri=${encodeURIComponent('https://example.org/test')}`
+        );
+
+        expect(cookies.session).toEqual({
+          value: '',
+          options: {
+            domain: undefined,
+            expires: new Date(0),
+            httpOnly: true,
+            path: '/',
+            sameSite: 'lax',
+            secure: true,
+          },
+        });
+      });
+
+      it('should redirect to endSessionUrl with post logout configured through handler options (with base path)', async () => {
+        setupDiscovery({
+          end_session_endpoint: 'https://op.example.com/endsession',
+        });
+
+        const cookies = {} as any;
+
+        await setSessionCookieValue(cookies, {
+          session: {},
+          lifetime: { c: now(), e: now() + 86400, u: now() },
+        });
+
+        const instance = getConfiguredInstance({
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.signOut(req, res, { post_logout_url: '/test' });
+
+        expect(res.res.redirectedUrl).toBe(
+          `https://op.example.com/endsession?client_id=__test_client_id__&post_logout_redirect_uri=${encodeURIComponent('https://example.org/basepath/test')}`
         );
 
         expect(cookies.session).toEqual({
@@ -2131,6 +2424,52 @@ describe('MonoCloud Base Instance', () => {
         }
       );
 
+      ['/from/query', 'https://example.org/basepath/from/query'].forEach(
+        post_logout_url => {
+          it('can pickup post_logout_url from query param (with basepath)', async () => {
+            setupDiscovery({
+              end_session_endpoint: 'https://op.example.com/endsession',
+            });
+
+            const cookies = {} as any;
+
+            await setSessionCookieValue(cookies, {
+              session: {},
+              lifetime: { c: now(), e: now() + 86400, u: now() },
+            });
+
+            const instance = getConfiguredInstance({
+              appUrl: 'https://example.org/basepath',
+            });
+
+            const req = new TestReq({
+              cookies,
+              query: { post_logout_url },
+              method: 'GET',
+            });
+            const res = new TestRes(cookies);
+
+            await instance.signOut(req, res);
+
+            expect(res.res.redirectedUrl).toBe(
+              `https://op.example.com/endsession?client_id=__test_client_id__&post_logout_redirect_uri=${encodeURIComponent('https://example.org/basepath/from/query')}`
+            );
+
+            expect(cookies.session).toEqual({
+              value: '',
+              options: {
+                domain: undefined,
+                expires: new Date(0),
+                httpOnly: true,
+                path: '/',
+                sameSite: 'lax',
+                secure: true,
+              },
+            });
+          });
+        }
+      );
+
       [
         { federatedLogout: 23 },
 
@@ -2187,6 +2526,32 @@ describe('MonoCloud Base Instance', () => {
         expect(res.res.redirectedUrl).toBe('https://example.org');
       });
 
+      it('should redirect to app url if there is no session (with basepath)', async () => {
+        setupDiscovery({
+          end_session_endpoint: 'https://op.example.com/endsession',
+        });
+
+        const cookies = {} as any;
+
+        await setSessionCookieValue(cookies, {
+          lifetime: { c: now(), e: now() + 86400, u: now() },
+        });
+
+        const instance = getConfiguredInstance({
+          appUrl: 'https://example.org/basepath',
+        });
+
+        const req = new TestReq({
+          cookies,
+          method: 'GET',
+        });
+        const res = new TestRes(cookies);
+
+        await instance.signOut(req, res);
+
+        expect(res.res.redirectedUrl).toBe('https://example.org/basepath');
+      });
+
       [
         [{ federatedLogout: false }, {}],
         [{}, { federatedLogout: false }],
@@ -2214,6 +2579,51 @@ describe('MonoCloud Base Instance', () => {
           await instance.signOut(req, res, handlerOpt);
 
           expect(res.res.redirectedUrl).toBe(`https://example.org`);
+
+          expect(cookies.session).toEqual({
+            value: '',
+            options: {
+              domain: undefined,
+              expires: new Date(0),
+              httpOnly: true,
+              path: '/',
+              sameSite: 'lax',
+              secure: true,
+            },
+          });
+        });
+      });
+
+      [
+        [{ federatedLogout: false }, {}],
+        [{}, { federatedLogout: false }],
+      ].forEach(([opt, handlerOpt], i) => {
+        it(`should redirect to app url if federatedLogout is false ${i + 1} of 2 (with base path)`, async () => {
+          setupDiscovery({
+            end_session_endpoint: 'https://op.example.com/endsession',
+          });
+
+          const cookies = {} as any;
+
+          await setSessionCookieValue(cookies, {
+            session: {},
+            lifetime: { c: now(), e: now() + 86400, u: now() },
+          });
+
+          const instance = getConfiguredInstance({
+            ...opt,
+            appUrl: 'https://example.org/basepath',
+          } as any);
+
+          const req = new TestReq({
+            cookies,
+            method: 'GET',
+          });
+          const res = new TestRes(cookies);
+
+          await instance.signOut(req, res, handlerOpt);
+
+          expect(res.res.redirectedUrl).toBe(`https://example.org/basepath`);
 
           expect(cookies.session).toEqual({
             value: '',
@@ -2560,6 +2970,59 @@ describe('MonoCloud Base Instance', () => {
         idToken: 'idtoken',
         refreshToken: 'rt',
       });
+    });
+
+    it('getUserOrRedirect should return the user if a session is present', async () => {
+      const cookies = {};
+
+      await setSessionCookieValue(cookies, {
+        session: {
+          user: { sub: 'id' },
+          scopes: 'abc',
+          accessToken: 'at',
+          accessTokenExpiration: 8,
+          idToken: 'idtoken',
+          refreshToken: 'rt',
+        },
+        lifetime: { u: now(), e: now() + 4, c: now() },
+      });
+
+      const req = new TestReq({ cookies });
+      const res = new TestRes();
+
+      const instance = getConfiguredInstance();
+
+      const user = await instance.getUserOrRedirect(req, res);
+
+      expect(user).toEqual({ sub: 'id' });
+    });
+
+    it('getUserOrRedirect should redirect if there is no session', async () => {
+      const req = new TestReq({ url: '/somepage' });
+      const res = new TestRes();
+
+      const instance = getConfiguredInstance();
+
+      await instance.getUserOrRedirect(req, res);
+
+      expect(res.res.statusCode).toBe(302);
+      expect(res.res.redirectedUrl).toBe(
+        'https://example.org/api/auth/signin?return_url=/somepage'
+      );
+    });
+
+    it('getUserOrRedirect can accept a custom return url', async () => {
+      const req = new TestReq({ url: '/somepage' });
+      const res = new TestRes();
+
+      const instance = getConfiguredInstance();
+
+      await instance.getUserOrRedirect(req, res, '/override');
+
+      expect(res.res.statusCode).toBe(302);
+      expect(res.res.redirectedUrl).toBe(
+        'https://example.org/api/auth/signin?return_url=/override'
+      );
     });
 
     it('updateSession should update the session', async () => {

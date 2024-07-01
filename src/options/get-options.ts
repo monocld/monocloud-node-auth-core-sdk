@@ -92,7 +92,7 @@ export const getOptions = (
         DefaultOptions.defaultAuthParams.response_type,
     },
     cookieSecret: options?.cookieSecret || MONOCLOUD_AUTH_COOKIE_SECRET!,
-    appUrl,
+    appUrl: removeTrailingSlash(appUrl),
     routes: {
       callback: removeTrailingSlash(
         options?.routes?.callback ||

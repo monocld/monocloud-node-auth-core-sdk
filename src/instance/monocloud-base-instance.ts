@@ -16,6 +16,7 @@ import {
   MonoCloudTokens,
   UserInfoOptions,
   MonoCloudOptions,
+  MonoCloudUser,
 } from '../types';
 import {
   AuthorizationParameters,
@@ -37,7 +38,13 @@ import {
 } from '../options/validation';
 import { MonoCloudValidationError } from '../errors/monocloud-validation-error';
 import dbug, { Debugger } from 'debug';
-import { getAcrValues, isAbsoluteUrl, isSameHost, now } from '../utils';
+import {
+  ensureLeadingSlash,
+  getAcrValues,
+  isAbsoluteUrl,
+  isSameHost,
+  now,
+} from '../utils';
 import { OAuthClient } from '../openid-client/oauth-client';
 
 export class MonoCloudBaseInstance {
@@ -138,10 +145,7 @@ export class MonoCloudBaseInstance {
         opt.returnUrl ?? this.options.appUrl
       );
 
-      const redirectUrl = new URL(
-        this.options.routes.callback,
-        this.options.appUrl
-      ).toString();
+      const redirectUrl = `${this.options.appUrl}${ensureLeadingSlash(this.options.routes.callback)}`;
 
       // Generate the monocloud state
       const monoCloudState: MonoCloudState = {
@@ -257,7 +261,7 @@ export class MonoCloudBaseInstance {
 
       // check if the url is a relative url
       if (!isAbsoluteUrl(url)) {
-        fullUrl = new URL(url, this.options.appUrl).toString();
+        fullUrl = `${this.options.appUrl}${ensureLeadingSlash(url)}`;
       }
 
       // Get the search parameters or the body
@@ -275,7 +279,7 @@ export class MonoCloudBaseInstance {
       // Get the redirect Url to be validated
       const redirectUri =
         callbackOptions?.authParams?.redirect_uri ??
-        new URL(this.options.routes.callback, this.options.appUrl).toString();
+        `${this.options.appUrl}${ensureLeadingSlash(this.options.routes.callback)}`;
 
       // Get the tokens
       const tokens = await this.client.callback(
@@ -312,7 +316,7 @@ export class MonoCloudBaseInstance {
 
         if (!isAbsoluteUrl(decodedUrl)) {
           response.redirect(
-            new URL(decodedUrl, this.options.appUrl).toString()
+            `${this.options.appUrl}${ensureLeadingSlash(decodedUrl)}`
           );
           return response.done();
         }
@@ -466,7 +470,7 @@ export class MonoCloudBaseInstance {
 
       // Ensure the return to is an absolute one
       if (!isAbsoluteUrl(returnUrl)) {
-        returnUrl = new URL(returnUrl, this.options.appUrl).toString();
+        returnUrl = `${this.options.appUrl}${ensureLeadingSlash(returnUrl)}`;
       }
 
       // Get the current session
@@ -676,6 +680,25 @@ export class MonoCloudBaseInstance {
       idToken: newSession.idToken,
       isExpired: isNewTokenExpired,
     };
+  }
+
+  public async getUserOrRedirect(
+    request: MonoCloudRequest,
+    response: MonoCloudResponse,
+    returnUrl?: string
+  ): Promise<MonoCloudUser> {
+    const session = await this.getSession(request, response);
+
+    if (!session) {
+      const rawRequest = await request.getRawRequest();
+
+      const url = `${this.options.appUrl}${ensureLeadingSlash(this.options.routes.signIn)}?return_url=${returnUrl?.trim().length ? returnUrl : rawRequest.url}`;
+
+      response.redirect(url, 302);
+      return response.done();
+    }
+
+    return session.user;
   }
 
   private async getSessionFromCallback(
